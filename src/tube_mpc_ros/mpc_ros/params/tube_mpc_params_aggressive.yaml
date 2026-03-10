@@ -1,0 +1,79 @@
+MPCPlannerROS:
+  map_frame: map
+  odom_frame: odom
+  base_frame: base_footprint
+
+  # 激进运动参数 - 追求速度
+  min_trans_vel: 0.01
+
+  max_vel_x: 1.5              # 激进的最大速度: 1.5 m/s
+  min_vel_x: -0.2
+
+  max_vel_y: 0.0
+  min_vel_y: 0.0
+
+  trans_stopped_vel: 0.01
+
+  max_rot_vel: 3.0            # 激进的旋转速度: 3.0 rad/s
+  min_rot_vel: 0.1
+  rot_stopped_vel: 0.01
+
+  # 激进的加速度限制
+  acc_lim_x: 4.0              # 激进的加速度
+  acc_lim_theta: 5.0          # 激进的角加速度
+  acc_lim_y: 0.0
+
+  # 目标容差 - 精确控制
+  yaw_goal_tolerance: 0.3
+  xy_goal_tolerance: 0.25
+  latch_xy_goal_tolerance: false
+
+  # 路径跟踪参数 - 优化路径跟踪
+  path_distance_bias: 40.0    # 增加路径跟踪权重
+  goal_distance_bias: 24.0
+  occdist_scale: 0.02
+  forward_point_distance: 0.5 # 更大的前瞻距离
+  stop_time_buffer: 0.15
+  scaling_speed: 0.3
+  max_scaling_factor: 0.2
+
+  oscillation_reset_dist: 0.05
+
+  publish_traj_pc: true
+  publish_cost_grid_pc: true
+
+  # 调试信息
+  debug_info: true
+  max_speed: 1.5
+  waypoints_dist: -1.0
+  path_length: 10.0            # 更长的前瞻路径
+  controller_freq: 10
+
+  # === Tube MPC 激进参数 ===
+
+  # MPC预测参数
+  mpc_steps: 30               # 更多预测步数
+  mpc_ref_cte: 0.0
+  mpc_ref_vel: 1.2            # 激进的参考速度: 1.2 m/s
+  mpc_ref_etheta: 0.0
+
+  # MPC权重参数 - 优先速度
+  mpc_w_cte: 30.0             # 进一步降低路径跟踪权重
+  mpc_w_etheta: 30.0          # 进一步降低航向权重
+  mpc_w_vel: 20.0             # 极低的速度权重，优先速度
+  mpc_w_angvel: 15.0          # 极低的角速度权重
+  mpc_w_angvel_d: 15.0
+  mpc_w_accel: 10.0           # 极低的加速度权重
+  mpc_w_accel_d: 2.0
+
+  # MPC约束参数 - 激进约束
+  mpc_max_angvel: 2.0         # 非常高的最大角速度: 2.0 rad/s
+  mpc_max_throttle: 2.0       # 非常高的最大油门: 2.0
+  mpc_bound_value: 1.0e3
+
+  # 扰动处理
+  disturbance_bound: 0.2      # 更大的扰动边界
+  enable_adaptive_disturbance: true
+  disturbance_window_size: 100
+  tube_visualization: true
+  error_feedback_gain: 0.7    # 更强的误差反馈

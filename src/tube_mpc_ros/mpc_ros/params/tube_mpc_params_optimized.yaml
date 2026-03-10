@@ -1,0 +1,79 @@
+MPCPlannerROS:
+  map_frame: map
+  odom_frame: odom
+  base_frame: base_footprint
+
+  # 基本运动参数 - 优化版本
+  min_trans_vel: 0.01
+
+  max_vel_x: 1.0              # 提高最大速度: 0.5 -> 1.0 m/s
+  min_vel_x: -0.1             # 允许更大的后退速度
+
+  max_vel_y: 0.0
+  min_vel_y: 0.0
+
+  trans_stopped_vel: 0.01
+
+  max_rot_vel: 2.0            # 提高最大旋转速度: 1.5 -> 2.0 rad/s
+  min_rot_vel: 0.1
+  rot_stopped_vel: 0.01
+
+  # 加速度限制 - 适当放宽
+  acc_lim_x: 3.0              # 提高加速度限制: 2.0 -> 3.0
+  acc_lim_theta: 4.0          # 提高角加速度限制: 3.0 -> 4.0
+  acc_lim_y: 0.0
+
+  # 目标容差
+  yaw_goal_tolerance: 0.5     # 减小角度容差: 1.0 -> 0.5
+  xy_goal_tolerance: 0.3      # 减小位置容差: 0.5 -> 0.3
+  latch_xy_goal_tolerance: false
+
+  # 路径跟踪参数
+  path_distance_bias: 32.0
+  goal_distance_bias: 20.0
+  occdist_scale: 0.02
+  forward_point_distance: 0.4  # 增加前瞻距离: 0.325 -> 0.4
+  stop_time_buffer: 0.2
+  scaling_speed: 0.25
+  max_scaling_factor: 0.2
+
+  oscillation_reset_dist: 0.05
+
+  publish_traj_pc: true
+  publish_cost_grid_pc: true
+
+  # 调试信息
+  debug_info: true             # 开启调试以便观察
+  max_speed: 1.0               # 提高最大速度: 0.5 -> 1.0
+  waypoints_dist: -1.0
+  path_length: 8.0             # 增加路径长度: 5.0 -> 8.0
+  controller_freq: 10
+
+  # === Tube MPC 核心参数 - 优化版本 ===
+
+  # MPC预测参数
+  mpc_steps: 25               # 增加预测步数: 20 -> 25
+  mpc_ref_cte: 0.0            # 参考横向误差
+  mpc_ref_vel: 0.8            # 提高参考速度: 0.5 -> 0.8 m/s
+  mpc_ref_etheta: 0.0         # 参航向误差
+
+  # MPC权重参数 - 重新平衡
+  mpc_w_cte: 50.0             # 降低横向误差权重: 100.0 -> 50.0
+  mpc_w_etheta: 50.0          # 降低航向误差权重: 100.0 -> 50.0
+  mpc_w_vel: 50.0             # 大幅降低速度权重: 100.0 -> 50.0
+  mpc_w_angvel: 30.0          # 降低角速度权重: 50.0 -> 30.0
+  mpc_w_angvel_d: 30.0        # 降低角速度变化率权重: 50.0 -> 30.0
+  mpc_w_accel: 20.0           # 降低加速度权重: 50.0 -> 20.0
+  mpc_w_accel_d: 5.0          # 降低加速度变化率权重: 10.0 -> 5.0
+
+  # MPC约束参数 - 关键优化
+  mpc_max_angvel: 1.5         # 大幅提高最大角速度: 0.5 -> 1.5 rad/s
+  mpc_max_throttle: 1.5       # 提高最大油门: 1.0 -> 1.5
+  mpc_bound_value: 1.0e3
+
+  # 扰动处理
+  disturbance_bound: 0.15      # 稍微增加扰动边界: 0.1 -> 0.15
+  enable_adaptive_disturbance: true
+  disturbance_window_size: 100
+  tube_visualization: true
+  error_feedback_gain: 0.6    # 稍微增加误差反馈增益: 0.5 -> 0.6
