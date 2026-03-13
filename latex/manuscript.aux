@@ -1,0 +1,152 @@
+\relax 
+\citation{Yu2024Automatica_STL_MPM}
+\citation{Yu2024TRO_NestedSTL}
+\citation{Huang2024CASE_SelfTrigSTL}
+\citation{Meng2023RAL_STL_NPC}
+\citation{Chen2025RAL_STL_MPPI}
+\citation{Yang2024CEP_STL_MPC}
+\citation{Coulson2020TAC_DeePC_DR}
+\citation{Han2022TAC_DRCC_MPC}
+\citation{Soudjani2021Automatica_RiskMPC}
+\citation{Zhao2023Automatica_DRMPC_OF}
+\citation{Yang2024AMechanics_RobotDRMPC}
+\citation{Clark2021Automatica_StochCBF}
+\citation{Nishimura2024TAC_StochCBF}
+\citation{Cohen2024ARCR_ReducedSafety}
+\citation{Garg2023IJRR_TopBSP}
+\citation{Liu2024TRO_BeliefSTL}
+\citation{Zhao2025IJRR_NoRegret}
+\citation{Li2024TIV_TL_ActiveInfo}
+\citation{Cohen2023ARC_SafeMBRL}
+\citation{Cai2025TAC_SafeLTL}
+\@writefile{toc}{\contentsline {section}{\numberline {I}Introduction}{1}{}\protected@file@percent }
+\citation{Sutton2023TRO_ShieldedControl}
+\citation{Pan2024TRO_TMP}
+\citation{Yu2024Automatica_STL_MPM}
+\citation{Coulson2020TAC_DeePC_DR}
+\citation{Zhao2023Automatica_DRMPC_OF}
+\citation{Clark2021Automatica_StochCBF,Nishimura2024TAC_StochCBF}
+\citation{Sutton2023TRO_ShieldedControl,Pan2024TRO_TMP}
+\@writefile{toc}{\contentsline {section}{\numberline {II}Preliminaries}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-A}}Dynamics, observations, and constraints}{2}{}\protected@file@percent }
+\newlabel{eq:dynamics}{{1}{2}{}{}{}}
+\newlabel{eq:safe-set}{{2}{3}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-B}}Information state (belief) and estimator}{3}{}\protected@file@percent }
+\newlabel{eq:belief-update}{{3}{3}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-C}}Signal Temporal Logic (STL) and robustness}{3}{}\protected@file@percent }
+\newlabel{rem:smooth-robust}{{1}{3}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-D}}Chance constraints and distributional robustness}{3}{}\protected@file@percent }
+\newlabel{eq:chance}{{4}{3}{}{}{}}
+\newlabel{eq:dr-chance}{{5}{3}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {III}Problem Formulation}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Task and safety specifications}{3}{}\protected@file@percent }
+\newlabel{eq:robustness-soft}{{6}{3}{}{}{}}
+\newlabel{eq:horizon-dr-chance}{{7}{3}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Belief-space objective and robustness budget}{3}{}\protected@file@percent }
+\newlabel{eq:belief-objective}{{8}{3}{}{}{}}
+\newlabel{eq:budget}{{9}{3}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Policies, safety-feasible class, and regret}{4}{}\protected@file@percent }
+\newlabel{eq:safe-class}{{10}{4}{}{}{}}
+\newlabel{eq:safe-regret}{{11}{4}{}{}{}}
+\newlabel{eq:dynamic-regret}{{12}{4}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-D}}Standing assumptions}{4}{}\protected@file@percent }
+\newlabel{ass:regularity}{{1}{4}{}{}{}}
+\newlabel{ass:estimator}{{2}{4}{}{}{}}
+\newlabel{ass:warm}{{3}{4}{}{}{}}
+\newlabel{prob:dr-stl-mpc-single}{{1}{4}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {IV}Proposed Method}{4}{}\protected@file@percent }
+\newlabel{sec:method}{{IV}{4}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Overview and Notation}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}Belief-Space STL Robustness and Budget}{5}{}\protected@file@percent }
+\newlabel{subsec:stl}{{\mbox  {IV-B}}{5}{}{}{}}
+\newlabel{eq:smin-smax}{{14}{5}{}{}{}}
+\newlabel{eq:belief-robust}{{15}{5}{}{}{}}
+\newlabel{eq:budget-update}{{16}{5}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-C}}Distributionally Robust Chance Constraints via Data-Driven Tightening}{5}{}\protected@file@percent }
+\newlabel{subsec:drcc}{{\mbox  {IV-C}}{5}{}{}{}}
+\newlabel{eq:joint-drcc}{{17}{5}{}{}{}}
+\newlabel{eq:tightening}{{18}{5}{}{}{}}
+\newlabel{eq:dr-cvar}{{19}{5}{}{}{}}
+\newlabel{eq:chebyshev}{{20}{5}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-D}}Tube/Track Realization and Terminal Set}{5}{}\protected@file@percent }
+\newlabel{subsec:tube}{{\mbox  {IV-D}}{5}{}{}{}}
+\newlabel{eq:tube}{{21}{5}{}{}{}}
+\newlabel{eq:tube-tight}{{22}{6}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-E}}Receding-Horizon Program and Solver}{6}{}\protected@file@percent }
+\newlabel{subsec:program}{{\mbox  {IV-E}}{6}{}{}{}}
+\newlabel{eq:final-mpc}{{23}{6}{}{}{}}
+\newlabel{eq:final-obj}{{23a}{6}{}{}{}}
+\newlabel{eq:final-nomdyn}{{23b}{6}{}{}{}}
+\newlabel{eq:final-bounds}{{23c}{6}{}{}{}}
+\newlabel{eq:final-safety}{{23d}{6}{}{}{}}
+\newlabel{eq:final-terminal}{{23e}{6}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-F}}From Abstract No-Regret to Dynamic Regret (Sketch)}{6}{}\protected@file@percent }
+\newlabel{subsec:regret}{{\mbox  {IV-F}}{6}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-G}}Algorithm}{6}{}\protected@file@percent }
+\newlabel{subsec:algorithm}{{\mbox  {IV-G}}{6}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {V}Theoretical Foundations}{6}{}\protected@file@percent }
+\newlabel{sec:theory}{{V}{6}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Standing assumptions and technical preliminaries}{6}{}\protected@file@percent }
+\newlabel{ass:standing}{{4}{6}{}{}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {1}{\ignorespaces Safe-Regret MPC (belief-space DR--STL with tube/track and calibrated tightening)}}{7}{}\protected@file@percent }
+\newlabel{alg:safe-regret-mpc}{{1}{7}{}{}{}}
+\newlabel{lem:smooth}{{1}{7}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}From distributionally robust chance constraints to deterministic tightenings}{7}{}\protected@file@percent }
+\newlabel{lem:margin}{{2}{7}{}{}{}}
+\newlabel{eq:margin-formula}{{24}{8}{}{}{}}
+\newlabel{eq:lipschitz-offset}{{25}{8}{}{}{}}
+\newlabel{eq:one-step-sufficient}{{26}{8}{}{}{}}
+\newlabel{eq:cantelli}{{27}{8}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}Feasibility and stability of the receding-horizon loop}{8}{}\protected@file@percent }
+\newlabel{thm:feas}{{1}{8}{}{}{}}
+\newlabel{thm:feas}{{2}{8}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}Probabilistic satisfaction of the STL specification}{9}{}\protected@file@percent }
+\newlabel{thm:sat}{{3}{9}{}{}{}}
+\newlabel{eq:window-drcc}{{28}{9}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-E}}Performance: from abstract no-regret to dynamic and safe regret}{10}{}\protected@file@percent }
+\newlabel{lem:track}{{3}{10}{}{}{}}
+\newlabel{eq:error-dyn}{{29}{10}{}{}{}}
+\newlabel{eq:lyap-descent1}{{30}{10}{}{}{}}
+\newlabel{eq:lyap-descent}{{31}{10}{}{}{}}
+\newlabel{eq:second-moment-sum}{{32}{10}{}{}{}}
+\newlabel{thm:regret}{{4}{10}{}{}{}}
+\newlabel{eq:inst-decomp}{{35}{11}{}{}{}}
+\newlabel{eq:nominal-upper}{{38}{11}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Experimental Evaluation}{11}{}\protected@file@percent }
+\newlabel{sec:experiments}{{VI}{11}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-A}}Platforms and ROS Integration}{11}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-B}}Tasks and STL Specifications}{12}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-C}}Baselines}{12}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-D}}Metrics}{12}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-E}}Implementation Details}{12}{}\protected@file@percent }
+\bibdata{references}
+\bibcite{Yu2024Automatica_STL_MPM}{1}
+\bibcite{Yu2024TRO_NestedSTL}{2}
+\bibcite{Huang2024CASE_SelfTrigSTL}{3}
+\bibcite{Meng2023RAL_STL_NPC}{4}
+\bibcite{Chen2025RAL_STL_MPPI}{5}
+\bibcite{Yang2024CEP_STL_MPC}{6}
+\bibcite{Coulson2020TAC_DeePC_DR}{7}
+\bibcite{Han2022TAC_DRCC_MPC}{8}
+\bibcite{Soudjani2021Automatica_RiskMPC}{9}
+\bibcite{Zhao2023Automatica_DRMPC_OF}{10}
+\bibcite{Yang2024AMechanics_RobotDRMPC}{11}
+\bibcite{Clark2021Automatica_StochCBF}{12}
+\bibcite{Nishimura2024TAC_StochCBF}{13}
+\bibcite{Cohen2024ARCR_ReducedSafety}{14}
+\bibcite{Garg2023IJRR_TopBSP}{15}
+\bibcite{Liu2024TRO_BeliefSTL}{16}
+\bibcite{Zhao2025IJRR_NoRegret}{17}
+\bibcite{Li2024TIV_TL_ActiveInfo}{18}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-F}}Protocol}{13}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-G}}Results and Analysis}{13}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-H}}Ablations and Sensitivity}{13}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-I}}Reproducibility Checklist}{13}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {VII}Conclusions}{13}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{References}{13}{}\protected@file@percent }
+\bibcite{Cohen2023ARC_SafeMBRL}{19}
+\bibcite{Cai2025TAC_SafeLTL}{20}
+\bibcite{Sutton2023TRO_ShieldedControl}{21}
+\bibcite{Pan2024TRO_TMP}{22}
+\bibstyle{IEEEtran}
+\gdef \@abspage@last{14}

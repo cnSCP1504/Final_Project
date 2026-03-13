@@ -1,0 +1,102 @@
+\documentclass[journal]{IEEEtran}
+\usepackage{graphicx,subfigure}
+%\usepackage{subfig}
+\usepackage{cite}
+\usepackage{picinpar}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{url}
+\usepackage{flushend}
+\usepackage[latin1]{inputenc}
+\usepackage{colortbl}
+\usepackage{soul}
+\usepackage{multirow}
+%\usepackage{pifont}
+\usepackage{color}
+\usepackage{alltt}
+\usepackage{siunitx}
+%\usepackage{breakurl}
+\usepackage{epstopdf}
+\usepackage{pbox}
+\usepackage{gensymb}
+\usepackage{amsthm}
+\usepackage{cuted}
+%\usepackage{flushend}
+\usepackage{multicol,lipsum}
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\newcommand{\argmin}{\operatornamewithlimits{argmin}}
+\newcommand{\argmax}{\operatornamewithlimits{argmax}}
+
+\newtheorem{lemma}{Lemma}
+\newtheorem{theorem}{Theorem}
+\newtheorem{corollary}{Corollary}
+\newtheorem{proposition}{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{example}{Example}
+\newtheorem{problem}{Problem}
+ \newtheorem{assumption}{Assumption}
+\newtheorem{remark}{Remark}
+
+\begin{document}
+\title{Fault diagnosis and control with a self-sensing actuator motor for rotary machine via physical informed neural network}
+%
+%\author{
+%	\vskip 1em
+%	Gang Chen,  
+%	Yu Lu and Rong Su, \emph{Senior Member, IEEE}
+%	\thanks{
+%		Manuscript received Month xx, 2xxx; revised Month xx, xxxx; accepted Month x, xxxx.
+%		
+%		The support from Singapore National Research Foundation Delta-NTU Corporate Lab Program (SMA-RP14) and from Singapore Ministry of Education AcRF Tier 1 2018-T1-001-245 (RG 91/18) are gratefully acknowledged.
+%		
+%		All the three authors are  with School of Electrical and Electronic Engineering, Nanyang Technological University, Singapore 639798 (e-mail:gang.chen@ntu.edu.sg, yu.lu@ntu.edu.sg, rsu@ntu.edu.sg). 
+% 
+%	}
+%}
+
+\maketitle
+	
+\begin{abstract}
+Timed failure propagation graph (TFPG) is a causal model that captures the causal and temporal aspects of failure propagation in many safety-critical system operations, which performs fault diagnosis in a transparent way such that human operators can understand the behaviours of the systems. However, accurate TFPGs are hard to obtain for complex systems with state of the art methods, since these methods depend on expert's knowledge or accurate model of the system. This paper presents a data-driven TFPG construction approach for rotational machines, which finds   spectral-timed failure propagation graphs (sTFPG) directly from data. The sTFPG construction problem is transformed into a spectral-temporal logic inference problem and solved with a tree-structured long short-term memory (LSTM) network. Experiments with data from rotational machines demonstrate the performance of the proposed method in sTFPG construction and its application to fault diagnosis.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Fault diagnosis,  spectral temporal logic, timed failure propagation graph, tree-structured LSTM networks.
+\end{IEEEkeywords}
+
+\markboth{IEEE Transactions on Industrial Informatics}%
+{}
+
+
+
+\section{Introduction}
+In recent years, intelligence, sophistication and integrate becomes an obvious trend in the development of modern equipments. The increasing  complexity of these equipments demand for fault diagnosis of crucial components to guarantee their safety and reliability \cite{haidong2018intelligent}.  Rolling element bearings are widely used components in modern rotary machines, and their faults may lead to fatal breakdown of modern machines. Therefore, intelligent fault diagnosis for rolling element bearings is urgently needed to prevent catastrophic failures, enhance safety and reliability, and reduce maintenance costs.   
+
+ Hitherto, vibration-based methods have attracted intensive attention and  a variety of fault diagnosis techniques have been  investigated to analysis the vibration signals and accurately extract fault characteristics. These methods can be divided into two major categories: signal analysis-based and machine learning-based \cite{yang2019intelligent}. Signal analysis methods try to interpret the fault signals on a rolling element as strikes and the broadband bursts excited by the shocks is further modulated in amplitude. The modulation pattern of the fault signals depend on the strength of bursts, the ballpass frequency and where the fault is moving \cite{randall2011rolling}. Signal analysis methods, therefore, justify themselves by depicting the relationship between the vibration signals and the fault mechanisms, such as kurtosis \cite{antoni2006spectral} and cyclostationary \cite{ming2011weak}. Based on the fault models and its associated patterns, a good signal analysis technique should explicitly  extract the periodic information of the impulsive response of a faulty bearing.  To efficient detect the fault pattern in the non-stationary and non-linear rolling bearing vibration signals, time-frequency signal analysis methods have been developed great later. By mapping the one-dimensional signal to a two-dimensional time-frequency plane, time-frequency analysis offers us both the time and frequency information simultaneously. Wavelet transform based time-frequency method, to be the best one and have been widely used in many fields, has attracted intensively studies in the later and a review can be seen in \cite{peng2004application}. Then to avoid the deficiencies of wavelet transform, e.g., border distortion, energy leakage, limitation of Heisenberg-Gabor inequality and etc., many techniques have been proposed to improve the time frequency representation \cite{ziaja2016fault,chen2013chirplet,chen2015adaptive}.  Among these methods, Hilbert-Huang transform (HHT) \cite{huang1999new,huang2014hilbert} has been thought to have make a breakthrough in the time-frequency analysis community.  
+ 
+ 
+Machine learning methods, on the other hand, pay litte attention to the fault mechanisms and try to determinate the health state of the rolling element bearings automatic with feature diagnosis techniques. First, a set of features  are extracted from the vibration signals, then the features are feed to a pattern recognition algorithm to automatise the diagnosis procedure and provide the decision about the condition of the bearing, e.g., outer race fault, inner race fault. Many machine learning algorithms have been applied to the diagnosis of rolling element bearings such as hidden Markov model (HMM) \cite{jiang2015study,purushotham2005multi,jiang2016hidden,jiang2017intelligent}, deep neural network \cite{guo2016hierarchical,gan2016construction}, and support vector machine \cite{chen2015novel,abbasion2007rolling,widodo2007support}. Since the quality of the features affects the performance of the diagnosis results, many scholars have studied the feature extraction process and try to enhance the features in variety of ways. One of the most popular methods is combing the feature extraction with signal analysis results. For instance, feature extraction based on wavelet transform \cite{he2015automatic,zhang2015rolling}, wavelet package transfrom \cite{wang2018fault}, and kurtosis \cite{tian2016motor}.
+
+Signal analysis methods can obtain a good interpretation of vibration signals, i.e., the time-frequency representation  is easy to understand with the concept of time and frequency. However, due to the information loss during feature extraction process and the uninterpretable machine learning algorithm used fault diagnosis process, machine learning based methods show an unsatisfiable performance in signal interpretation. The feature extraction based on the signal analysis results has in some way tried to build a relationship between the fault mechanism and uninterpretable machine algorithms. For instance, with empirical mode decomposition (EMD), the component of intrinsic mode function (IMF) with signal feature can be separated from the signal and  energy moment of  intrinsic mode functions IMFs is proposed as eigenvector to effectively express the failure feature \cite{bin2012early}. Even though the feature with some physical meanings has released the unterptretable drawback of the machine learning algorithms, there is gap between the vibration signal and fault diagnosis  results for human understanding. The stimulus behind this paper is that we try to interpret the vibration signal with machine learning method, and build a seamless connection between the signal analysis methods and machine learning methods. 
+
+In this paper, we proposed a frequency temporal  logic (FTL) based on HHT, and apply it to rolling element bearing fault diagnosis. Frequency temporal logic is inspired by signal temporal logic \cite{maler2004monitoring,donze2010robust}, which is a "rich" specification language and has been widely used in specifiy the requirements for high-assurance cyber-phiscal system \cite{chen2016active}. FTL is a expressive language to specify the property of rolling element bearing fault signal. For instance,  a bearing fault signal can be explicitly described by $\varphi=\square\lozenge_{[0,\tau)} (f_{1}>5)$, which reads "always eventually the amplitude of frequency component $f_{1}$ is bigger than 5 in time duration $[0,\tau)$ ". The always  $\square$ eventually $\lozenge$  operator are combined to reveal the  harmonics characteristic of defect frequency. FTL uses a formula (e.g. $\varphi$ mentioned above), to specify the characteristic of the fault signal, which acts as an interpretable classifier applied to vibration signal. Therefore, the fault signal will satisfy the formula and the normal signal will violate the signal. The FTL interpretation methodology presented in this paper offers a way to apply the machine learning algorithm to learn an understandable fault characteristic, thus to reduce the errors caused by subjective human judgment in signal analysis methods.
+
+we formula the vibration signal interpretation process as a logic inference problem: Given a set of labeled vibration signals, e.g., signal labeled with outer race, inner race fault, a parametric FTL template $\varphi_{\theta}$ with a set of unknown parameters $\theta$, find a $\theta^{*}$ such that the interpretation $\varphi_{\theta^{*}}$ is satisfied by the labeled signals. With the concept of \emph{robustness degree} \cite{donze2010robust}, the above problem can be converted into learning an optimal parameter vector $\theta^{*}$. The detailed solution for vibration signal interpretation will be given in this paper, in the following, the application of the proposed interpretation to rolling element bearing fault diagnosis will be carried our.
+
+The layout of this paper is as follows: 
+ 
+
+\section{Preliminaries}
+
+\section{Conclusions}
+
+
+\bibliography{references}
+\bibliographystyle{IEEEtran}
+
+
+ 
+
+\end{document}

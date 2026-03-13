@@ -1,0 +1,1371 @@
+\documentclass[journal]{IEEEtran}
+\usepackage{graphicx,subfigure}
+%\usepackage{subfig}
+\usepackage{cite}
+\usepackage{picinpar}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{url}
+\usepackage{flushend}
+\usepackage[latin1]{inputenc}
+\usepackage{colortbl}
+\usepackage{soul}
+\usepackage{multirow}
+%\usepackage{pifont}
+\usepackage{color}
+\usepackage{alltt}
+\usepackage{siunitx}
+%\usepackage{breakurl}
+\usepackage{epstopdf}
+\usepackage{pbox}
+\usepackage{gensymb}
+\usepackage{amsthm}
+\usepackage{cuted}
+%\usepackage{flushend}
+\usepackage{multicol,lipsum}
+\usepackage[noend]{algpseudocode}
+\newcommand{\argmin}{\operatornamewithlimits{argmin}}
+\newcommand{\argmax}{\operatornamewithlimits{argmax}}
+\usepackage{algorithm}
+ 
+\newtheorem{lemma}{Lemma}
+\newtheorem{theorem}{Theorem}
+\newtheorem{corollary}{Corollary}
+\newtheorem{proposition}{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{example}{Example}
+\newtheorem{problem}{Problem}
+ \newtheorem{assumption}{Assumption}
+\newtheorem{remark}{Remark}
+
+\begin{document}
+\title{Safe-Regret MPC for Temporal-Logic Tasks in Stochastic, Partially Observable Robots}
+%
+%\author{
+%	\vskip 1em
+%	Gang Chen,  
+%	Yu Lu and Rong Su, \emph{Senior Member, IEEE}
+%	\thanks{
+%		Manuscript received Month xx, 2xxx; revised Month xx, xxxx; accepted Month x, xxxx.
+%		
+%		The support from Singapore National Research Foundation Delta-NTU Corporate Lab Program (SMA-RP14) and from Singapore Ministry of Education AcRF Tier 1 2018-T1-001-245 (RG 91/18) are gratefully acknowledged.
+%		
+%		All the three authors are  with School of Electrical and Electronic Engineering, Nanyang Technological University, Singapore 639798 (e-mail:gang.chen@ntu.edu.sg, yu.lu@ntu.edu.sg, rsu@ntu.edu.sg). 
+% 
+%	}
+%}
+
+\maketitle
+	
+\begin{abstract}
+We propose \emph{Safe-Regret MPC}, a unified framework that integrates temporal-logic task specification, probabilistic safety, and learning guarantees for safety-critical robotic control under uncertainty and partial observability. The approach optimizes task performance while constraining \emph{regret relative to a safety-feasible policy class}, thereby enforcing both task compliance and risk limits in closed loop. We (i) formalize a \emph{constrained (safe) regret} notion against all policies that satisfy Signal Temporal Logic (STL) specifications with probability at least $1-\delta$; (ii) lift STL to the belief space with a differentiable robustness surrogate, enabling tractable incorporation of logic objectives into MPC; (iii) enforce safety via distributionally robust chance constraints with online, data-driven tightening to account for finite-sample error and distribution shift; and (iv) \emph{sink} abstract no-regret guarantees to the dynamically feasible layer by coupling reference learning with tube/track MPC, proving that $o(T)$ regret at the abstract level induces $o(T)$ \emph{dynamic regret} under bounded tracking error. We further construct distributionally robust control-invariant terminal sets, a composite Lyapunov--Barrier condition, and a robustness-budget update to establish \emph{recursive feasibility}, \emph{ISS-like stability}, and a \emph{probabilistic satisfaction lower bound} simultaneously in receding horizon. Experiments on collaborative assembly and load-transport tasks demonstrate higher STL satisfaction probability, reduced safe/dynamic regret, and real-time execution, with ablations confirming the necessity of each component. The results provide a principled route to integrate logic-level objectives, uncertainty, and learning with provable guarantees for safety-critical robotic systems.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Robot safety; Model predictive control; Temporal logic; Chance-constrained optimization; No-regret learning
+\end{IEEEkeywords}
+
+
+ 
+
+\markboth{IEEE Transactions on Robotics}%
+{}
+\section{Introduction}
+
+Robots increasingly operate in settings where mission-level directions, physical feasibility, and safety under uncertainty must be resolved within a single feedback architecture. Temporal logics such as Signal Temporal Logic (STL) and Linear Temporal Logic (LTL) capture deadlines, sequencing, and persistency with machine-verifiable semantics, while model predictive control (MPC) serves as a principled vehicle to optimize performance subject to dynamics and constraints. Bridging these layers requires methods that (i) express logic objectives at the level of uncertainty-aware feedback, (ii) guarantee probabilistic safety under distribution shift, and (iii) retain dynamic feasibility at control time scales. The last five years have delivered substantial advances along each axis, yet an end-to-end, receding-horizon solution that also quantifies closed-loop performance relative to a safety-feasible baseline remains elusive.
+
+ 
+Embedding STL in MPC has progressed from off-line synthesis to closed-loop formulations that optimize a robustness notion of the specification. Recent works formalize monitoring in receding horizons and show how robustness scores can guide on-line optimization without violating semantics \cite{Yu2024Automatica_STL_MPM}. Continuous-time synthesis for nested STL improves expressiveness for robotic tasks that interleave reach-avoid and dwell-time requirements \cite{Yu2024TRO_NestedSTL}. In parallel, self-triggered implementations trade frequent replanning for certificate-backed inter-event updates, reducing computation while maintaining satisfaction \cite{Huang2024CASE_SelfTrigSTL}. Learning has entered the loop as well: neural MPC variants optimize differentiable surrogates of STL robustness for manipulation and navigation benchmarks \cite{Meng2023RAL_STL_NPC}, and sampling-based planners shape trajectory costs with STL terms to accelerate exploration while staying specification-aware \cite{Chen2025RAL_STL_MPPI}. These developments strengthen logic expressivity and computational efficiency at the control layer; however, most formulations either assume nominal uncertainty or rely on fixed noise models, which can degrade satisfaction when disturbances or sensing statistics shift \cite{Yang2024CEP_STL_MPC}.
+
+ 
+Stochastic MPC with chance constraints offers explicit risk accounting, and recent distributionally robust (DR) variants certify out-of-sample safety with finite data. Data-enabled DR predictive control provides reformulations that maintain violation probabilities below prescribed levels even when disturbance distributions are misspecified \cite{Coulson2020TAC_DeePC_DR}. Finite-sample concentration bounds for DR chance constraints make these guarantees quantitative and tunable \cite{Han2022TAC_DRCC_MPC}. A unifying perspective across risk-averse and chance-constrained MPC clarifies when tractable convex surrogates preserve essential safety properties \cite{Soudjani2021Automatica_RiskMPC}. Output-feedback DR-MPC extends these guarantees to the partially observed case and demonstrates recursive feasibility with estimator-in-the-loop designs \cite{Zhao2023Automatica_DRMPC_OF}. For robotic manipulators, DR tightening has been specialized to torque and state constraints to cope with unmodeled contacts and payload changes \cite{Yang2024AMechanics_RobotDRMPC}. Complementary to chance constraints, barrier-certificate methods advance safety filtering. Stochastic control barrier functions (CBFs) provide forward invariance with probability-one or high-confidence bounds for diffusion-driven systems \cite{Clark2021Automatica_StochCBF}, and recent extensions adapt the construction to safety-critical controller synthesis with uncertainty in the drift and diffusion terms \cite{Nishimura2024TAC_StochCBF}. Linking CBF filtering with logic progression is an emerging theme in robotics safety, especially when certificates must preserve feasibility of downstream planners and controllers \cite{Cohen2024ARCR_ReducedSafety}. While each strand yields safety evidence, integrating DR chance constraints with logic-robustness budgeting in a \emph{single} MPC loop is not yet standard practice and can lead either to overly conservative tightening or satisfaction drift over rolling horizons.
+
+ 
+Temporal-logic planning has moved beyond deterministic graph search toward uncertainty-aware strategies that explicitly reason about beliefs and information acquisition. Belief-space planning with topological abstractions scales active SLAM and exploration by reasoning over homology classes while preserving information-theoretic objectives \cite{Garg2023IJRR_TopBSP}. In mobile robotics, belief-space logic planning demonstrates how specifications and partial information can be reconciled to generate robust policies with real-time performance \cite{Liu2024TRO_BeliefSTL}. No-regret planning for temporal logic begins to quantify learning efficiency in partially known environments by bounding performance relative to an oracle that knows the latent structure \cite{Zhao2025IJRR_NoRegret}. Task planning that interleaves information gathering with goal achievement shows improved satisfaction probabilities when sensing and model uncertainties dominate \cite{Li2024TIV_TL_ActiveInfo}. At the control-learning interface, logic-guided, safety-critical learning architectures demonstrate that temporal specifications can shape exploration and value estimation while maintaining verifiable safety \cite{Cohen2023ARC_SafeMBRL}, and deep learning pipelines with temporal logic constraints have reported theory-backed compliance for continuous systems \cite{Cai2025TAC_SafeLTL}. These methods illuminate how planning and learning can leverage logic and uncertainty; nevertheless, most abstract-layer guarantees do not propagate to the continuous dynamics that implement the plans, leaving a gap between task-level regret and dynamically feasible, constraint-satisfying execution.
+
+ 
+The preceding literature highlights a fragmentation: logic-aware MPC ensures on-line satisfaction but often lacks explicit performance guarantees; DR-chance MPC certifies risk but seldom reasons about logic robustness budgets; belief-space planning and no-regret strategies address exploration and structure learning, yet do not certify that exploratory references admit feasible tracking subject to actuation limits, probabilistic safety, and estimator dynamics. Shielding mechanisms for manipulation couple logic guards with feedback control and demonstrate robustness to task perturbations \cite{Sutton2023TRO_ShieldedControl}, and recent task-motion pipelines improve execution fidelity in the real world by articulating geometric and dynamic constraints \cite{Pan2024TRO_TMP}. Even so, a unified framework that (i) optimizes logic robustness in the belief space, (ii) enforces calibrated DR chance constraints, (iii) \emph{sinks} abstract no-regret performance to the continuous, dynamically feasible layer, and (iv) certifies recursive feasibility, stability, and probabilistic satisfaction in a receding horizon remains an open target.\vspace{0.2em}
+
+ 
+We develop \emph{Safe-Regret MPC}, a unified architecture that addresses the above gaps by coupling three design elements. First, the STL objective is lifted to the belief space through a differentiable robustness surrogate that preserves the ordering properties of classical monitors, enabling gradient-based optimization inside MPC. The surrogate is paired with a rolling \emph{robustness budget} that allocates temporal slack across the horizon so that satisfaction does not erode under distributional shift or estimator transients; this mechanism directly targets the horizon-coupled nature of STL \cite{Yu2024Automatica_STL_MPM}. Second, safety is enforced through distributionally robust chance constraints whose tightening is \emph{data-driven}: ambiguity sets are updated on-line from residuals, enabling finite-sample violation control without assuming parametric noise models \cite{Coulson2020TAC_DeePC_DR}. Output-feedback and nonlinear variants may be used when estimator dynamics and contact-rich behaviors dominate \cite{Zhao2023Automatica_DRMPC_OF}. Third, the abstraction gap is closed by treating the planner's output as a reference trajectory with uncertainty tubes and proving a \emph{regret-transfer} result: if the abstract layer achieves \(o(T)\) regret and the reference obeys velocity/curvature and tube admissibility conditions, then the closed-loop dynamic regret of the tube/track DR-STL-MPC law is also \(o(T)\). The coupling relies on distributionally robust control-invariant terminal sets together with composite Lyapunov-Barrier arguments adapted to chance constraints \cite{Clark2021Automatica_StochCBF,Nishimura2024TAC_StochCBF}.
+
+ 
+The proposed framework targets collaborative assembly, mobile manipulation, and cooperative transport, where tasks are most naturally specified by logic, sensing is intermittent or non-Gaussian, and uncertainty evolves as the scene changes. For such scenarios, classical feasibility/stability certificates alone do not quantify performance relative to a safety-feasible baseline, and pure learning approaches may violate hard constraints during exploration. By weaving belief-space STL, DR-chance safety, and regret analysis into a single receding-horizon control law, Safe-Regret MPC provides interpretable satisfaction with calibrated risk and end-to-end performance guarantees. The approach complements shielding and task-motion pipelines by offering a quantitative route to translate abstract performance bounds to the continuous, actuator-limited layer that ultimately executes the plan \cite{Sutton2023TRO_ShieldedControl,Pan2024TRO_TMP}.
+
+\paragraph*{Contributions.}
+This paper makes four contributions. \emph{First}, we formulate an optimal-control problem that maximizes belief-space STL robustness while enforcing distributionally robust chance constraints and bounding performance \emph{relative to a safety-feasible policy class}. \emph{Second}, we design a differentiable belief-space STL surrogate together with a rolling robustness budget and an on-line, residual-calibrated tightening for DR chance constraints. \emph{Third}, we establish a \emph{regret-transfer} analysis that sinks abstract no-regret planning to dynamically feasible tube/track MPC with chance constraints, yielding \(o(T)\) dynamic regret under bounded tracking error. \emph{Fourth}, we provide receding-horizon certification via distributionally robust control-invariant terminal sets and composite Lyapunov-Barrier functions, obtaining recursive feasibility, ISS-like stability, and a satisfaction-probability lower bound in closed loop. Empirical studies on collaborative assembly and load transport evaluate satisfaction probability with confidence bounds, regret curves, terminal and barrier statistics, and real-time execution; ablations quantify the contribution of each module.
+
+% (End of Introduction)
+\section{Preliminaries}
+
+This section fixes notation and recalls the essential ingredients used throughout the paper:
+stochastic dynamics and partial observations, belief states, Signal Temporal Logic (STL) with
+robustness, and chance constraints (including a distributionally robust variant). The presentation
+is intentionally compact and self-contained to be readable by newcomers.
+
+\subsection{Dynamics, observations, and constraints}
+We consider discrete-time dynamics with control input $u_k\in\mathcal{U}\subset\mathbb{R}^{m}$,
+state $x_k\in\mathcal{X}\subset\mathbb{R}^{n}$, and process disturbance $w_k$:
+\begin{equation}
+  x_{k+1} = f(x_k,u_k,w_k), \qquad k=0,1,2,\dots
+  \label{eq:dynamics}
+\end{equation}
+A sensor returns $y_k=g(x_k,\nu_k)$ with measurement noise $\nu_k$.
+The set $\mathcal{X}$ encodes state constraints (e.g., joint limits), and $\mathcal{U}$ encodes actuator
+constraints (e.g., torque/velocity bounds). We assume $f$ and $g$ are locally Lipschitz in their
+state and input arguments unless stated otherwise.
+
+\paragraph*{Safety set and output maps.}
+A safety requirement is encoded by a continuously differentiable function
+$h:\mathcal{X}\rightarrow\mathbb{R}$, with safe set
+\begin{equation}
+  \mathcal{C} \;=\; \{x\in\mathcal{X}:\; h(x)\ge 0\}.
+  \label{eq:safe-set}
+\end{equation}
+Multiple safety channels $\{h_j\}_{j=1}^{J}$ can be aggregated as $h(x)\!=\!\min_j h_j(x)$ (or via a
+smooth under-approximation). We also admit task-relevant output maps $z = \psi(x)$, which will be
+used by STL predicates.
+
+\subsection{Information state (belief) and estimator}
+Let $\mathcal{I}_k:=\{y_{0:k},u_{0:k-1}\}$ be the data available at time $k$.
+The \emph{belief state} $\beta_k$ is a probability measure on $\mathcal{X}$ that represents the
+conditional distribution of $x_k$ given $\mathcal{I}_k$.
+In practice, $\beta_k$ is maintained by a filter (e.g., EKF/UKF/particle filter) that implements
+\begin{equation}
+  \beta_{k+1} \;=\; \mathsf{BayesUpdate}(\beta_k,u_k,y_{k+1}),
+  \label{eq:belief-update}
+\end{equation}
+and provides samples or moments to the controller. We denote by
+$\mathbb{E}_{\beta}[\cdot]$ the expectation with respect to $\beta$ and write $x\sim\beta$
+when sampling from the belief.
+
+\subsection{Signal Temporal Logic (STL) and robustness}
+STL formulas over real-valued signals are generated by the grammar
+\[
+\varphi ::= \top \;|\; \mu \;|\; \neg\varphi \;|\; \varphi_1\wedge\varphi_2
+\;|\; \mathbf{G}_{I}\varphi \;|\; \mathbf{F}_{I}\varphi \;|\; \varphi_1 \,\mathbf{U}_{I}\, \varphi_2,
+\]
+where $\mu$ is an atomic predicate of the form $a^\top z \le b$ (or, more generally, $p(z)\ge 0$),
+and $I\subset\mathbb{R}_{\ge 0}$ is a bounded time interval.
+Given a trajectory $\xi := (x_k)_{k\ge 0}$ (or output $z_k=\psi(x_k)$), the \emph{robustness}
+$\rho(\varphi;\xi,k)$ is a real-valued map whose sign indicates satisfaction and whose magnitude
+quantifies margin. We use the standard semantics (min/max for Boolean connectives, inf/sup over
+time intervals for temporal operators). For computation within MPC, we employ a smooth surrogate
+$\rho^{\text{soft}}$ that preserves order (e.g., log-sum-exp approximations to min/max); see
+Remark~\ref{rem:smooth-robust}.
+
+\begin{remark}[Smooth robustness]
+\label{rem:smooth-robust}
+Let $\mathrm{smax}_\tau(z):=\tau\log\!\sum_i e^{z_i/\tau}$ and
+$\mathrm{smin}_\tau(z):=-\mathrm{smax}_\tau(-z)$ with temperature $\tau>0$.
+Replacing min/max by $\mathrm{smin}_\tau/\mathrm{smax}_\tau$ yields a differentiable robustness
+$\rho^{\text{soft}}$ whose error relative to the exact $\rho$ can be bounded by $\mathcal{O}(\tau\log N)$,
+where $N$ is the number of terms in the aggregated operator. Smaller $\tau$ increases fidelity at
+the cost of sharper gradients.
+\end{remark}
+
+\subsection{Chance constraints and distributional robustness}
+Fix a target risk level $\delta\in(0,1)$. A (stagewise) chance constraint requires
+\begin{equation}
+  \Pr\big(h(x_k)\ge 0\big) \;\ge\; 1-\delta, \quad \text{for all } k.
+  \label{eq:chance}
+\end{equation}
+Since the disturbance/measurement distributions may be misspecified and only finite data are
+available, we employ a distributionally robust (DR) variant. Let $\widehat{\mathbb{P}}$ be the
+empirical distribution constructed from recent residuals, and let $\mathcal{P}$ be an ambiguity
+set (e.g., a Wasserstein ball or $\phi$-divergence neighborhood) centered at $\widehat{\mathbb{P}}$.
+The DR chance constraint demands
+\begin{equation}
+  \inf_{\mathbb{P}\in\mathcal{P}} \;
+  \Pr_{\mathbb{P}}\big(h(x_k)\ge 0\big) \;\ge\; 1-\delta,
+  \label{eq:dr-chance}
+\end{equation}
+which we will enforce via tractable tightenings calibrated on-line.
+
+\paragraph*{Notational conventions.}
+We stack horizon-$N$ sequences as $x_{k:k+N} := (x_k,\dots,x_{k+N})$ and
+$u_{k:k+N-1} := (u_k,\dots,u_{k+N-1})$. The indicator $\mathbf{1}\{\cdot\}$ equals $1$ when its
+argument is true, and $0$ otherwise. Norms $\|\cdot\|$ are Euclidean unless noted.
+
+\section{Problem Formulation}
+
+We now formalize the control objective, constraints, and performance criteria. The problem is set
+in receding horizon: at time $k$, given the belief $\beta_k$ and the current task specification,
+we compute an input sequence $u_{k:k+N-1}$, apply $u_k$, update $\beta_{k+1}$, and repeat.
+
+\subsection{Task and safety specifications}
+Let $\varphi$ be an STL task built from atomic predicates on $z=\psi(x)$. We use the (soft)
+robustness over a horizon window to quantify task margin:
+\begin{equation}
+  \rho^{\text{soft}}(\varphi;\, x_{k:k+N}) \;\in\; \mathbb{R},
+  \qquad
+  \rho^{\text{soft}}>0 \;\Rightarrow\; \text{predicted satisfaction.}
+  \label{eq:robustness-soft}
+\end{equation}
+Safety is encoded by the set $\mathcal{C}$ in \eqref{eq:safe-set}. Because of uncertainty, we
+require a DR chance version of \eqref{eq:chance} over the horizon:
+\begin{equation}
+  \inf_{\mathbb{P}\in\mathcal{P}_k}
+  \Pr_{\mathbb{P}}\!\left(h(x_t)\ge 0,\; \forall t\in\{k,\dots,k+N\}\right)
+  \;\ge\; 1-\delta,
+  \label{eq:horizon-dr-chance}
+\end{equation}
+where $\mathcal{P}_k$ is an ambiguity set constructed from recent residuals at time $k$.
+We translate \eqref{eq:horizon-dr-chance} into stagewise tightenings
+$h(x_t)\ge \sigma_{k,t}$ with data-driven margins $\sigma_{k,t}$ chosen so that the joint
+probability bound holds (Section~III provides the calibration mechanism).
+
+\subsection{Belief-space objective and robustness budget}
+Let $\ell(x,u)$ be a stage cost that captures control effort and nominal tracking objectives.
+We maximize STL robustness while controlling effort in expectation with respect to $\beta_k$:
+\begin{equation}
+  J_{k} \;=\; \mathbb{E}_{x\sim\beta_k}\Bigg[
+    \sum_{t=k}^{k+N-1} \ell(x_t,u_t)
+  \Bigg]
+  - \lambda \; \rho^{\text{soft}}(\varphi;\, x_{k:k+N}),
+  \label{eq:belief-objective}
+\end{equation}
+with trade-off $\lambda>0$. To prevent erosion of satisfaction due to horizon receding, we maintain
+a scalar \emph{robustness budget} $R_k\ge 0$ that must remain nonnegative after applying $u_k$:
+\begin{equation}
+  R_{k+1} \;\leftarrow\; \mathsf{UpdateBudget}(R_k,\; \rho^{\text{soft}}(\varphi;\, x_{k:k+N})).
+  \label{eq:budget}
+\end{equation}
+A simple choice takes $R_{k+1}=R_k+\rho^{\text{soft}}(\cdot)-\underline{r}$ with baseline
+$\underline{r}>0$, but any monotone update that certifies $R_k\ge 0$ suffices for Theorem~1.
+
+\subsection{Policies, safety-feasible class, and regret}
+A (non-anticipative) control policy maps information to inputs: $\pi:\mathcal{I}_k\mapsto u_k$.
+We define the \emph{safety-feasible policy class} $\Pi_{\text{safe}}$, which is defined as
+\begin{equation}
+  \left\{ \pi \;\middle|\;
+    \inf_{\mathbb{P}\in\mathcal{P}}
+    \Pr_{\mathbb{P}}\!\big(h(x_t)\ge 0,\ \forall t\big)\;\ge\; 1-\delta,\;
+    x_t\in\mathcal{X},\; u_t\in\mathcal{U}
+  \right\}.
+  \label{eq:safe-class}
+\end{equation}
+For a finite horizon $T$, define the cumulative cost
+$J_T(\pi):=\mathbb{E}\big[\sum_{k=0}^{T-1}\big(\ell(x_k,u_k)
++\lambda\,[ -\rho(\varphi;\xi,k)]_{+}\big)\big]$, where $[\cdot]_+=\max\{0,\cdot\}$.
+The \emph{safe regret} of a policy $\pi$ relative to $\Pi_{\text{safe}}$ is
+\begin{equation}
+  R_T^{\text{safe}}(\pi)
+  \;:=\;
+  J_T(\pi) - \inf_{\pi^\star\in\Pi_{\text{safe}}} J_T(\pi^\star).
+  \label{eq:safe-regret}
+\end{equation}
+In addition, to reflect dynamic feasibility at the continuous-control layer, we use a
+\emph{dynamic regret} with respect to an admissible, time-varying comparator sequence
+$\{(x_k^\star,u_k^\star)\}$ that respects dynamics and constraints:
+\begin{equation}
+\begin{array}{ll}
+  R_T^{\text{dyn}}(\pi)
+  \;:=&\;
+  \sum_{k=0}^{T-1}\big(\ell(x_k,u_k)-\ell(x_k^\star,u_k^\star)\big)\\
+  \;&+\; \gamma \sum_{k=0}^{T-1} \mathbf{1}\{(x_k,u_k)\notin\mathcal{X}\times\mathcal{U}\},
+\end{array}
+  \label{eq:dynamic-regret}
+\end{equation}
+with $\gamma>0$ penalizing infeasibility. Our goal is to design a receding-horizon controller that
+keeps both regrets $o(T)$ while certifying safety and satisfaction.
+
+\subsection{Standing assumptions}
+We collect mild regularity and modeling assumptions used by our analysis.
+
+\begin{assumption}[Regularity]
+\label{ass:regularity}
+The maps $f$ and $g$ are locally Lipschitz in $(x,u)$; the predicate functions defining STL
+atoms and $h(\cdot)$ are locally Lipschitz; the stage cost $\ell$ is convex in $u$ and locally
+Lipschitz in $(x,u)$.
+\end{assumption}
+
+\begin{assumption}[Estimator and ambiguity sets]
+\label{ass:estimator}
+The filter that produces $\beta_k$ is consistent in the sense that moments or samples used by the
+controller are unbiased. Ambiguity sets $\mathcal{P}_k$ are constructed from sliding-window
+residuals and satisfy a finite-sample coverage property: for a target $\delta\in(0,1)$, there
+exists $\bar{\delta}\in(0,1)$ such that
+$\inf_{\mathbb{P}\in\mathcal{P}_k}\Pr_{\mathbb{P}}(\cdot)\ge 1-\delta$
+whenever the empirical violation rate is $\le \bar{\delta}$.
+\end{assumption}
+
+\begin{assumption}[Feasible warm start]
+\label{ass:warm}
+At $k=0$, there exists a control sequence and terminal state that satisfy tightened constraints
+and $R_0\ge 0$. The receding-horizon law uses warm starts from the previous solution.
+\end{assumption}
+
+
+\begin{problem}[Belief-Space DR--STL--MPC with Certification Targets]
+\label{prob:dr-stl-mpc-single}
+\textbf{Given}
+\begin{itemize}
+  \item discrete-time stochastic dynamics and partial observations
+  \[
+  x_{t+1}=f(x_t,u_t,w_t),\qquad y_t=g(x_t,\nu_t),\quad t\in\mathbb{Z}_{\ge 0},
+  \]
+  with admissible sets $x_t\in\mathcal{X}\subset\mathbb{R}^n$, $u_t\in\mathcal{U}\subset\mathbb{R}^m$;
+  \item a belief $\beta_k$ over $x_k$ from filtering $\mathcal{I}_k=\{y_{0:k},u_{0:k-1}\}$;
+  \item an STL task $\varphi$ on $z=\psi(x)$, with differentiable robustness surrogate $\rho^{\mathrm{soft}}(\varphi;x_{k:k+N})$;
+  \item a safety set $\mathcal{C}=\{x:\,h(x)\ge 0\}$ and target risk level $\delta\in(0,1)$;
+  \item an ambiguity set $\mathcal{P}_k$ (built from recent residuals) for DR chance constraints;
+  \item horizon $N\in\mathbb{Z}_{>0}$, stage cost $\ell:\mathcal{X}\times\mathcal{U}\!\to\!\mathbb{R}_{\ge 0}$,
+        terminal set $\mathcal{X}_f$, and a robustness budget $R_k\ge 0$ with update rule $\mathsf{UpdateBudget}(\cdot)$.
+\end{itemize}
+
+\textbf{Decision variables}
+The predicted sequence $(x_{k:k+N},u_{k:k+N-1})$ and the applied control $u_k$.
+
+\textbf{Optimization at time $k$}
+\begin{equation*}
+\begin{aligned}
+\min_{x_{k:k+N},\,u_{k:k+N-1}}\quad
+& \mathbb{E}_{x\sim\beta_k}\!\Big[\sum_{t=k}^{k+N-1}\ell(x_t,u_t)\Big]
+\;-\;\lambda\,\rho^{\mathrm{soft}}(\varphi;x_{k:k+N})\\[2mm]
+\text{s.t.} 
+& x_{t+1}=f(x_t,u_t,w_t), t=k,\dots,k+N-1,\\
+& x_t\in\mathcal{X},\ \ u_t\in\mathcal{U},   \ \ t=k,\dots,k+N-1,\\
+& h(x_t)\ \ge\ \sigma_{k,t},    t=k,\dots,k+N,\\
+& x_{k+N}\in\mathcal{X}_f, \\
+& R_{k+1}=\mathsf{UpdateBudget}\!\left(R_k,\rho^{\mathrm{soft}}(\varphi;x_{k:k+N})\right),\\ 
+&R_{k+1}\ge 0,
+\end{aligned}
+\end{equation*}
+where the tightenings $\{\sigma_{k,t}\}$ are calibrated so that the \emph{joint} DR chance requirement holds:
+\[
+\inf_{\mathbb{P}\in\mathcal{P}_k}
+\Pr_{\mathbb{P}}\!\left(h(x_t)\ge 0,\ \forall t\in\{k,\dots,k+N\}\right)\ \ge\ 1-\delta.
+\]
+Apply the first input $u_k^\star$, update $(\beta_{k+1},\mathcal{P}_{k+1})$ from new data, and resolve at $k{+}1$.
+
+\textbf{Certification targets}
+\begin{enumerate}
+  \item \emph{Recursive feasibility}: if the program is feasible at $k{=}0$, it remains feasible for all $k\ge 0$.
+  \item \emph{ISS-like stability}: there exist $V$ and class-$\mathcal{K}$ functions $\alpha,\sigma$ such that
+        $\mathbb{E}[V(x_{k+1})-V(x_k)] \le -\alpha(\|x_k\|)+\sigma(\|w_k\|)$ for all $k$.
+  \item \emph{Probabilistic task satisfaction}: with calibration error $\varepsilon_n\!\to\!0$ as samples grow,
+        \[
+        \inf_{\mathbb{P}\in\mathcal{P}}\Pr_{\mathbb{P}}\big(\text{$\varphi$ is satisfied}\big)\ \ge\ 1-\delta-\varepsilon_n.
+        \]
+  \item \emph{Performance guarantees}: the \emph{safe regret}
+        $R_T^{\mathrm{safe}}
+        =J_T(\pi)-\inf_{\pi^\star\in\Pi_{\mathrm{safe}}}J_T(\pi^\star)$
+        and the \emph{dynamic regret}
+        $R_T^{\mathrm{dyn}}
+        =\sum_{k=0}^{T-1}(\ell(x_k,u_k)-\ell(x_k^\star,u_k^\star))
+        +\gamma\sum_{k=0}^{T-1}\mathbf{1}\{(x_k,u_k)\notin\mathcal{X}\times\mathcal{U}\}$
+        satisfy $R_T^{\mathrm{safe}}=o(T)$ and $R_T^{\mathrm{dyn}}=o(T)$ as $T\to\infty$.
+\end{enumerate}
+
+The goal of this paper is to synthesize a constructive receding-horizon controller (tightening calibration, budget update, terminal set, tube/track scheme)
+that solves the optimization and meets the certification targets.
+\end{problem}
+ 
+\section{Proposed Method}
+\label{sec:method}
+
+This section develops a constructive solution to Problem~\ref{prob:dr-stl-mpc-single}.
+We proceed from modeling choices to tractable constraints, and then to a tube/track realization
+that connects abstract planning to dynamically feasible control. Throughout, symbols are introduced
+locally and summarized when first used.
+
+\subsection{Overview and Notation}
+At time $k$, the controller holds a belief $\beta_k$ over the state $x_k\in\mathcal{X}\subset\mathbb{R}^n$,
+constructed from the information set $\mathcal{I}_k=\{y_{0:k},u_{0:k-1}\}$ via a consistent filter.
+The control decision is a sequence $u_{k:k+N-1}$; only $u_k$ is applied and the horizon then recedes.
+The objective trades nominal performance $\ell(x_t,u_t)\ge 0$ and STL robustness, while constraints
+enforce dynamics, actuator bounds, and distributionally robust (DR) chance safety with target risk $\delta$.
+
+We build four components:
+(i) a differentiable belief-space STL robustness surrogate with a rolling \emph{robustness budget};
+(ii) a DR chance-constraint tightening calibrated online from residuals;
+(iii) a tube/track decomposition that separates reference planning from bounded tracking error; and
+(iv) a terminal set and warm-start scheme that guarantee recursive feasibility.
+The final controller is summarized in Algorithm~\ref{alg:safe-regret-mpc}.
+
+\subsection{Belief-Space STL Robustness and Budget}
+\label{subsec:stl}
+Let $\varphi$ be an STL formula over an output $z_t=\psi(x_t)\in\mathbb{R}^p$.
+The exact robustness $\rho(\varphi; x_{k:k+N})$ is order-preserving but non-smooth due to min/max
+and interval inf/sup operators. We adopt a smooth surrogate $\rho^{\text{soft}}$ built by replacing
+$\min$ and $\max$ with
+\begin{align}
+\mathrm{smin}_\tau(z_1,\dots,z_q):&=-\tau\log\!\sum_{i=1}^q e^{-z_i/\tau},\\
+\mathrm{smax}_\tau(z_1,\dots,z_q):&=\tau\log\!\sum_{i=1}^q e^{z_i/\tau},
+\label{eq:smin-smax}
+\end{align}
+with \emph{temperature} $\tau>0$. The surrogate preserves ordering and admits bounded approximation
+error $\bigl|\rho^{\text{soft}}-\rho\bigr|\le \tau \log C(\varphi)$, where $C(\varphi)$ is the maximum
+number of terms aggregated by any temporal/Boolean operator of $\varphi$.
+We evaluate robustness in the belief space by Monte Carlo or moment-based approximations:
+\begin{equation}
+\widetilde{\rho}_k \;:=\; \mathbb{E}_{x\sim\beta_k}\big[\rho^{\text{soft}}(\varphi; x_{k:k+N})\big],
+\label{eq:belief-robust}
+\end{equation}
+where the expectation uses samples from $\beta_k$ (particle set) or unscented points. Equation
+\eqref{eq:belief-robust} enters the MPC objective with weight $\lambda>0$.
+
+To avoid \emph{horizon erosion} (the gradual loss of satisfaction margin as the horizon slides),
+we track a scalar \emph{robustness budget} $R_k\ge 0$. The budget acts as a simple inventory of
+temporal slack:
+\begin{equation}
+R_{k+1} \;=\; \max\!\Big\{0,\; R_k + \widetilde{\rho}_k - \underline{r}\Big\},
+\qquad \underline{r}>0,
+\label{eq:budget-update}
+\end{equation}
+and we require $R_{k+1}\ge 0$ within the MPC constraints. The constant $\underline{r}$ is a
+user-chosen baseline margin per step; if $\widetilde{\rho}_k$ falls persistently below $\underline{r}$,
+$R_k$ will deplete and the optimizer must compensate by allocating more slack to near-term predicates.
+
+\subsection{Distributionally Robust Chance Constraints via Data-Driven Tightening}
+\label{subsec:drcc}
+Safety is specified by a continuously differentiable function $h:\mathcal{X}\to\mathbb{R}$ with safe set
+$\mathcal{C}=\{x:\,h(x)\ge 0\}$. We enforce, over the horizon, the DR chance requirement
+\begin{equation}
+\inf_{\mathbb{P}\in\mathcal{P}_k}
+\Pr_{\mathbb{P}}\!\left(h(x_t)\ge 0 \text{ for all } t\in\{k,\dots,k+N\}\right)\ \ge\ 1-\delta.
+\label{eq:joint-drcc}
+\end{equation}
+Directly optimizing \eqref{eq:joint-drcc} is hard. We convert it into stagewise \emph{tightenings}
+\begin{equation}
+h(x_t)\ \ge\ \sigma_{k,t},\qquad t=k,\dots,k+N,
+\label{eq:tightening}
+\end{equation}
+with margins $\sigma_{k,t}\ge 0$ chosen so that \eqref{eq:joint-drcc} holds. We do this in two steps.
+
+\paragraph*{Step 1: Ambiguity calibration.}
+From the filter residuals over a sliding window $\mathcal{W}_k:=\{r_{k-M+1},\dots,r_k\}$ we construct
+an empirical distribution $\widehat{\mathbb{P}}_k$ and an ambiguity set $\mathcal{P}_k$ (e.g., a Wasserstein
+ball $\mathsf{B}_{\epsilon_k}(\widehat{\mathbb{P}}_k)$ with radius $\epsilon_k$). The radius $\epsilon_k$
+is selected to meet a finite-sample coverage guarantee (e.g., via concentration bounds or quantiles of the
+empirical distance), ensuring that the true disturbance distribution lies in $\mathcal{P}_k$ with high
+probability. This controls the out-of-sample violation rate at the desired level.
+
+\paragraph*{Step 2: Deterministic margins.}
+We linearize the safety function around the nominal predicted state $\bar{x}_t$:
+$h(x_t)\approx h(\bar{x}_t)+\nabla h(\bar{x}_t)^\top (x_t-\bar{x}_t)$.
+When the predicted state is affine in a disturbance proxy $\omega_t$ (for instance from a linearized
+or lifted model), $x_t=\bar{x}_t+G_t\omega_t$, the one-step constraint becomes
+\[
+h(\bar{x}_t)+\underbrace{\nabla h(\bar{x}_t)^\top G_t}_{c_t^\top}\omega_t \;\ge\; \sigma_{k,t}.
+\]
+A DR chance constraint on $c_t^\top\omega_t$ admits tractable conservative surrogates. Two common options:
+
+(i) \emph{Distributionally robust CVaR.} Enforce
+\begin{equation}
+\mathrm{CVaR}_{\delta}^{\mathcal{P}_k}\!\left(\sigma_{k,t}-h(\bar{x}_t)-c_t^\top\omega_t\right)\ \le\ 0,
+\label{eq:dr-cvar}
+\end{equation}
+which yields linear or second-order cone inequalities depending on the ambiguity set.
+
+(ii) \emph{Chebyshev-type bound.} If only mean and covariance $(\mu_t,\Sigma_t)$ of $\omega_t$ are reliable,
+enforce
+\begin{equation}
+h(\bar{x}_t)-\sigma_{k,t} \;\ge\; c_t^\top\mu_t + \kappa_\delta \,\| \Sigma_t^{1/2} c_t \|_2,
+\label{eq:chebyshev}
+\end{equation}
+where $\kappa_\delta$ is the Cantelli/Chebyshev factor that upper-bounds the tail probability by $\delta$.
+Either \eqref{eq:dr-cvar} or \eqref{eq:chebyshev} produces a computable margin $\sigma_{k,t}$.
+To lift from stagewise to joint risk \eqref{eq:joint-drcc}, we allocate per-step risks $\{\delta_t\}$
+with $\sum_{t=k}^{k+N}\delta_t\le \delta$ (Boole's inequality) and compute the corresponding margins.
+
+\paragraph*{Remark on nonlinearity.}
+For strongly nonlinear $h$, the linearization is refreshed at each SQP/SCVX iterate; the ambiguity and
+tightening are re-evaluated, and the overall program remains amenable to warm-started convex subproblems.
+
+\subsection{Tube/Track Realization and Terminal Set}
+\label{subsec:tube}
+To bridge abstract references and dynamics, we use a standard \emph{tube MPC} decomposition:
+\begin{equation}
+x_t \;=\; z_t + e_t, \qquad t=k,\dots,k+N,
+\label{eq:tube}
+\end{equation}
+where $z_t$ is a nominal (reference) state sequence and $e_t$ is a bounded tracking error confined to a
+tube $\mathcal{E}$ designed from local feedback. The input is split as $u_t = v_t + K e_t$, where $v_t$
+optimizes the nominal trajectory and $K$ is a stabilizing gain (e.g., from LQR on a linearization).
+With standard small-gain arguments, if the disturbance set (or covariance) is bounded, one can choose
+$\mathcal{E}$ so that $e_t\in\mathcal{E}$ for all $t$.
+We then tighten state/safety constraints on the nominal parts:
+\begin{equation}
+z_t \in \mathcal{X}\ominus\mathcal{E},\qquad
+h(z_t) \;\ge\; \sigma_{k,t} + \eta_{\mathcal{E}},
+\label{eq:tube-tight}
+\end{equation}
+where $\ominus$ is the Pontryagin difference and $\eta_{\mathcal{E}}\ge 0$ compensates the worst-case
+effect of $e_t$ on $h(\cdot)$ (computed from a local Lipschitz constant of $h$ on $\mathcal{E}$).
+The terminal set $\mathcal{X}_f$ is selected to be \emph{distributionally robust control invariant}
+for the nominal dynamics with the tube feedback; this ensures that if $z_{k+N}\in\mathcal{X}_f$, then
+future feasibility can be maintained under the same construction. In practice, $\mathcal{X}_f$ is computed
+as an inner approximation of a robust invariant set for the linearized dynamics with input $v_t$ and
+feedback $K$; it is then checked against the tightened safety \eqref{eq:tube-tight}.
+
+\subsection{Receding-Horizon Program and Solver}
+\label{subsec:program}
+With the preceding elements, the belief-space DR--STL--MPC solved at time $k$ is
+\begin{subequations}
+\label{eq:final-mpc}
+\begin{align}
+\min_{z_{k:k+N},\,v_{k:k+N-1}}   &
+\mathbb{E}_{x\sim\beta_k}\!\Big[\sum_{t=k}^{k+N-1}\ell(z_t+e_t,\ v_t+K e_t)\Big]
+\;-\;\lambda\,\widetilde{\rho}_k
+\label{eq:final-obj}\\
+\text{s.t.}\quad
+& z_{t+1} = \bar{f}(z_t,v_t),  t=k,\dots,k+N-1, \label{eq:final-nomdyn}\\
+& z_t \in \mathcal{X}\ominus\mathcal{E},\quad v_t+K e_t\in \mathcal{U}, \label{eq:final-bounds}\\
+& h(z_t) \ge \sigma_{k,t} + \eta_{\mathcal{E}}, \quad t=k,\dots,k+N, \label{eq:final-safety}\\
+& z_{k+N}\in\mathcal{X}_f,\label{eq:final-terminal}\\
+&R_{k+1}=\max\{0, R_k + \widetilde{\rho}_k - \underline{r}\}, 
+\end{align}
+\end{subequations}
+where $\bar{f}$ denotes the nominal (possibly linearized) dynamics and $e_t$ is the tube error predicted
+by the local error model (or bounded by design). The expectation in \eqref{eq:final-obj} is evaluated by
+drawing samples $x\sim\beta_k$ and propagating them through \eqref{eq:tube}; with quadratic $\ell$ and convex
+tightenings, each SQP/SCVX iteration reduces to a QP/SOCP that we warm-start from the previous solution.
+
+\paragraph*{Warm-start and real-time operation.}
+We store the previous optimizer $(z^\star,v^\star)$, shift it by one step, and use it as an initial guess.
+We also warm-start the dual variables of the tightened constraints. The ambiguity radius $\epsilon_k$, margins
+$\sigma_{k,t}$, and temperature $\tau$ are updated slowly to avoid oscillations.
+
+\subsection{From Abstract No-Regret to Dynamic Regret (Sketch)}
+\label{subsec:regret}
+Let the planner (abstract layer) produce a reference sequence $\{z_t^{\text{ref}}\}$ with $o(T)$ regret
+against a comparator in its class (e.g., an oracle with full map knowledge). Suppose
+(i) $z_t^{\text{ref}}$ satisfies velocity/curvature bounds that are compatible with the tube $\mathcal{E}$ and
+the input split $u_t=v_t+Ke_t$, and (ii) the ambiguity calibration and tightenings satisfy the coverage property
+of \ref{subsec:drcc}. Then the tube/track MPC~\eqref{eq:final-mpc} ensures bounded tracking error $e_t$ and
+feasible inputs. The cumulative cost difference to a dynamically feasible comparator can be bounded by the
+abstract regret plus terms that scale with $\sum_t\|e_t\|$ and tightening slack, yielding sublinear
+\emph{dynamic regret} $R_T^{\text{dyn}}=o(T)$; the \emph{safe regret} is controlled by the same argument
+restricted to the safety-feasible class.
+
+
+ 
+ \subsection{Algorithm}
+\label{subsec:algorithm}
+
+Algorithm~\ref{alg:safe-regret-mpc} implements the controller described in
+Sections~\ref{subsec:stl}--\ref{subsec:program} in a way that is explicit about
+what is computed at each step and why. We recall the key symbols as they first appear:
+$\beta_k$ is the current belief over the state (the distribution used to draw
+samples for expectations); $\mathcal{W}_k$ is a sliding window of filter residuals; 
+$\widehat{\mathbb{P}}_k$ is the empirical disturbance law estimated from $\mathcal{W}_k$;
+$\mathcal{P}_k$ is an ambiguity set (e.g., a Wasserstein ball) centered at $\widehat{\mathbb{P}}_k$;
+$\{\delta_t\}$ are per-step risk allocations with $\sum_{t=k}^{k+N}\delta_t\le\delta$;
+$\{\sigma_{k,t}\}$ are deterministic safety margins (tightenings) that make the joint chance
+constraint hold; $\widetilde{\rho}_k$ is the belief-space STL robustness surrogate; 
+$(K,\mathcal{E})$ define the tube feedback and error set; $\mathcal{X}_f$ is a robust
+terminal set; $R_k$ is the scalar robustness budget. The optimization variables of the inner
+program are nominal states/inputs $(z_{k:k+N},v_{k:k+N-1})$; the applied input is
+$u_k^\star=v_k^\star+K e_k^\star$ with $e_k^\star$ the predicted tube error at time $k$.
+
+ 
+\textbf{Estimation} updates the information state used both for cost (through
+$\widetilde{\rho}_k$) and for uncertainty quantification (through residuals).
+\textbf{Ambiguity calibration} converts finite data into an out-of-sample guarantee by
+enlarging $\widehat{\mathbb{P}}_k$ into $\mathcal{P}_k$. 
+\textbf{Tightening} translates the distributional chance requirement into deterministic
+margins that are easy to impose in the optimizer.
+\textbf{Robustness evaluation} computes a smooth STL margin that preserves the ordering
+of satisfaction and can be differentiated with respect to decision variables.
+\textbf{Solve MPC} enforces dynamics, bounds, tube constraints, safety margins, terminal
+invariance, and budget nonnegativity, returning the first control.
+\textbf{Apply \& Update} closes the loop and updates $R_{k+1}$ to prevent horizon erosion.
+
+\begin{algorithm}[t]
+\caption{Safe-Regret MPC (belief-space DR--STL with tube/track and calibrated tightening)}
+\label{alg:safe-regret-mpc}
+\begin{algorithmic}[1]
+\State \textbf{Inputs (fixed):} STL formula $\varphi$; horizon $N$; total risk $\delta$;
+weight $\lambda>0$; baseline robustness $\underline{r}>0$; tube feedback $K$ and error set $\mathcal{E}$;
+terminal set $\mathcal{X}_f$; soft-robustness temperature $\tau>0$; residual window size $M$.
+\State \textbf{Initialize:} consistent state estimator (to produce $\beta_0$); a feasible warm-start
+$(z_{0:N},v_{0:N-1})$ that satisfies tightened constraints; budget $R_0\ge 0$.
+\For{$k=0,1,2,\dots$}
+  \State \textbf{Estimation (belief and residuals).}
+  Update the belief $\beta_k$ from $\mathcal{I}_k=\{y_{0:k},u_{0:k-1}\}$ using the chosen filter;
+  collect the most recent $M$ residuals into $\mathcal{W}_k$.
+  \State \textbf{Ambiguity calibration (finite-sample coverage).}
+  Form the empirical disturbance law $\widehat{\mathbb{P}}_k$ from $\mathcal{W}_k$; choose a radius
+  $\epsilon_k$ from a coverage rule (e.g., quantile of the empirical Wasserstein distance or a
+  concentration bound), and set the ambiguity set $\mathcal{P}_k=\mathsf{B}_{\epsilon_k}(\widehat{\mathbb{P}}_k)$.
+  \State \textbf{Risk allocation and tightening (deterministic margins).}
+  Distribute the total risk across the horizon to obtain $\{\delta_t\}_{t=k}^{k+N}$ with
+  $\sum \delta_t\le \delta$ (uniform or deadline-biased); compute stagewise margins $\{\sigma_{k,t}\}$
+  by enforcing either DR--CVaR (convex) or Chebyshev-type bounds for each step; add the tube
+  correction $\eta_{\mathcal{E}}$ when mapping to nominal states $z_t$.
+  \State \textbf{Robustness surrogate (belief-space evaluation).}
+  Draw samples $\{x^{(s)}\}_{s=1}^{S}$ from $\beta_k$ (or use sigma-points) and evaluate the
+  soft robustness $\rho^{\text{soft}}(\varphi;x^{(s)}_{k:k+N})$ using
+  \eqref{eq:smin-smax}; average to obtain $\widetilde{\rho}_k$ in \eqref{eq:belief-robust}.
+  \State \textbf{Solve DR--STL--tube MPC (warm-started).}
+  With initial guess from the shifted previous solution, solve the nominal problem
+  \eqref{eq:final-mpc} for $(z_{k:k+N}^\star,v_{k:k+N-1}^\star)$ subject to dynamics, bounds,
+  tube constraints, safety margins $h(z_t)\ge \sigma_{k,t}+\eta_{\mathcal{E}}$, terminal
+  constraint $z_{k+N}\in\mathcal{X}_f$, and budget update
+  $R_{k+1}=\max\{0,R_k+\widetilde{\rho}_k-\underline{r}\}$.
+  \State \textbf{Apply and update (recede horizon).}
+  Construct $u_k^\star=v_k^\star+K e_k^\star$ and apply it to the system; receive $y_{k+1}$,
+  update $\beta_{k+1}$ and $\mathcal{W}_{k+1}$, set $R_{k+1}$ as above, shift
+  $(z^\star,v^\star)$ by one step to warm-start the next iteration, and set $k\leftarrow k{+}1$.
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\section{Theoretical Foundations}
+\label{sec:theory}
+
+This section certifies the controller of Problem~\ref{prob:dr-stl-mpc-single}. The results are organized so that each statement addresses one of the certification targets (feasibility, stability, probabilistic satisfaction, and performance).  
+
+\subsection{Standing assumptions and technical preliminaries}
+
+\begin{assumption}[Tube dynamics, estimator, and terminal set]
+\label{ass:standing}
+\emph{(i) Tube dynamics)} There exists a stabilizing gain $K$ and a compact error set $\mathcal{E}$ such that the tracking error $e_{t+1}=\phi(e_t,\omega_t)$ is locally Lipschitz, satisfies $\phi(0,0)=0$, and $e_t\in\mathcal{E}$ with bounded $\omega_t$ implies $e_{t+1}\in\mathcal{E}$. \emph{(ii) Estimator)} The belief $\beta_k$ is produced by a consistent filter, so sample-based expectations used in~\eqref{eq:belief-robust} are unbiased. \emph{(iii) Ambiguity coverage)} The data-driven ambiguity set $\mathcal{P}_k$ satisfies a finite-sample coverage guarantee: for any event $A$, $\inf_{\mathbb{P}\in\mathcal{P}_k}\Pr_{\mathbb{P}}(A)\ge \Pr(A)-\varepsilon_n$ with $\varepsilon_n\!\to\!0$ as the residual window $n\!\to\!\infty$. \emph{(iv) Terminal set)} There exists a distributionally robust control-invariant set $\mathcal{X}_f\subseteq \mathcal{X}\ominus \mathcal{E}$ for the nominal dynamics $z_{t+1}=\bar f(z_t,v_t)$.
+\end{assumption}
+ 
+The tube invariance connects the nominal optimizer $(z,v)$ to the physical state $x=z+e$ so that tightening on $z$ implies feasibility for $x$. Estimator consistency and ambiguity coverage justify replacing unknown disturbance laws by $\mathcal{P}_k$ in the chance constraints. Terminal invariance is the standard MPC device to ``close the horizon,'' which we will use to propagate feasibility forward in time.
+
+\begin{lemma}[Smooth STL surrogate: uniform error bound and differentiability]
+\label{lem:smooth}
+Let $\rho(\varphi;\xi_{k:k+N})$ be the exact STL robustness (min/max Boolean semantics; inf/sup temporal semantics reduced to finite min/max in discrete time). Let $\rho^{\mathrm{soft}}$ be obtained by replacing each finite min/max over $\{z_i\}_{i=1}^{q}$ with
+\begin{align*}
+\mathrm{smin}_\tau(z):&=-\tau\log\!\sum_{i=1}^{q}e^{-z_i/\tau},\\
+\mathrm{smax}_\tau(z):&=\tau\log\!\sum_{i=1}^{q}e^{z_i/\tau},\quad \tau>0.
+\end{align*}
+ 
+Let $\mathcal{T}(\varphi)$ be the syntax tree and $q(v)$ the fan-in of node $v$ (number of aggregated terms).
+Define the \emph{aggregation complexity}
+\[
+C(\varphi):=\max_{P}\ \prod_{v\in P} q(v),
+\]
+where the maximum is over all root-to-leaf paths $P$ in $\mathcal{T}(\varphi)$. Then for any segment $\xi_{k:k+N}$,
+\[
+\big|\rho^{\mathrm{soft}}(\varphi;\xi_{k:k+N})-\rho(\varphi;\xi_{k:k+N})\big|\ \le\ \tau\log C(\varphi).
+\]
+If each atomic predicate map $p_j$ is $C^1$ in its argument, then $\rho^{\mathrm{soft}}$ is $C^1$ in all predicate values (and hence in $z_t=\psi(x_t)$ and $x_t$ wherever $\psi$ is $C^1$).
+\end{lemma}
+
+\begin{proof}[Proof]
+\textit{(a) One-step approximation.)}
+For any finite set $\{z_i\}_{i=1}^{q}$ and $\tau>0$,
+\begin{align*}
+\max_i & z_i \le \mathrm{smax}_\tau(z) \le \max_i z_i + \tau\log q,\\
+\min_i & z_i \ge \mathrm{smin}_\tau(z) \ge \min_i z_i - \tau\log q.
+\end{align*}
+ 
+These follow from $\log\!\sum_i e^{z_i/\tau}\le \max_i(z_i/\tau)+\log q$ and its symmetric form.
+
+\textit{(b) Tree-wise accumulation.)}
+Evaluate robustness bottom-up on the syntax tree $\mathcal{T}(\varphi)$: each internal node $v$ applies
+either min or max to its $q(v)$ children (temporal operators in discrete time reduce to finite min/max).
+Replace each such aggregation by $\mathrm{smin}_\tau$/$\mathrm{smax}_\tau$ to obtain $\rho^{\mathrm{soft}}$.
+
+Proceed by structural induction. At a leaf, no approximation is made (error $0$).
+At an internal node $v$ with children errors $\{E_i\}$, the $1$-Lipschitz property of
+$\mathrm{smin}_\tau/\mathrm{smax}_\tau$ (w.r.t.\ $\ell_\infty$ perturbations) gives
+\[
+\big|\mathrm{s(\cdot)}(x^{\mathrm{soft}})-\mathrm{s(\cdot)}(x)\big|\le \max_i E_i,
+\]
+and applying the bounds in (a) adds at most $\tau\log q(v)$. Hence the error at $v$ is bounded by
+$\tau\log q(v)+\max_i E_i$, i.e., sums $\tau\log q(\cdot)$ along one root-to-$v$ path. At the root,
+this yields the stated bound $\tau\log C(\varphi)$.
+
+\textit{(c) Differentiability.)}
+$\mathrm{smin}_\tau,\mathrm{smax}_\tau$ are $C^\infty$ with gradients equal to softmin/softmax weights.
+Composing finitely many $C^\infty$ aggregations with $C^1$ predicates preserves $C^1$ by the chain rule.
+\end{proof}
+
+
+The optimizer in~\eqref{eq:final-mpc} needs gradients. Lemma~\ref{lem:smooth} certifies that replacing $\rho$ by $\rho^{\mathrm{soft}}$ (to obtain derivatives) introduces a \emph{controlled} bias proportional to $\tau$, and that the sign of robustness is preserved when the margin is larger than this bias. This is what allows Algorithm~\ref{alg:safe-regret-mpc} to treat satisfaction as a smooth objective/constraint while keeping semantic fidelity.
+\subsection{From distributionally robust chance constraints to deterministic tightenings}
+
+ 
+\begin{lemma}[Deterministic margins that imply the joint DR chance constraint]
+\label{lem:margin}
+Let $h:\mathcal{X}\!\to\!\mathbb{R}$ be $L_h$-Lipschitz on $\mathcal{X}\ominus\mathcal{E}$, and use the tube decomposition
+$x_t=z_t+e_t$ with $e_t\in\mathcal{E}$ and $\|e_t\|\le\bar e$. For each $t\in\{k,\dots,k{+}N\}$, define
+$c_t:=\nabla h(z_t)$ and a scalar \emph{disturbance proxy} $Y_t:=c_t^\top\omega_t$, where $\omega_t$ collects the
+uncertainty affecting $x_t$ along the sensitivity direction $c_t$. Assume that under any $\mathbb{P}\in\mathcal{P}_k$,
+$Y_t$ has mean $\mu_t:=\mathbb{E}_{\mathbb{P}}[Y_t]$ and variance $\sigma_t^2:=\mathrm{Var}_{\mathbb{P}}[Y_t]
+= c_t^\top\Sigma_t c_t$, with $\Sigma_t$ the covariance of $\omega_t$. If the stagewise margins $\sigma_{k,t}$ satisfy
+\begin{equation}
+h(z_t)\ \ge\ \underbrace{L_h\,\bar e}_{\text{tube offset}}
+\ +\ \underbrace{\mu_t + \kappa_{\delta_t}\,\sigma_t}_{\text{distributional safety}}
+\ +\ \underbrace{\sigma_{k,t}}_{\text{stage margin}},
+\label{eq:margin-formula}
+\end{equation}
+with $\kappa_{\delta_t}:=\sqrt{(1-\delta_t)/\delta_t}$ (Cantelli/Chebyshev factor) and $\sum_{t=k}^{k+N}\delta_t\le \delta$, then
+\[
+\inf_{\mathbb{P}\in\mathcal{P}_k}
+\Pr_{\mathbb{P}}\!\Big(h(x_t)\ge \sigma_{k,t},\;\forall t\in\{k,\dots,k{+}N\}\Big)\ \ge\ 1-\delta-\varepsilon_n,
+\]
+where $\varepsilon_n\!\to\!0$ is the ambiguity coverage error in Assumption~\ref{ass:standing}.
+\end{lemma}
+
+\begin{proof}
+\textit{1) Separating tube error and stochastic variation.}
+By $L_h$-Lipschitz continuity of $h$ on $\mathcal{X}\ominus\mathcal{E}$ and $x_t=z_t+e_t$,
+\begin{equation}
+h(x_t)\ =\ h(z_t+e_t)\ \ge\ h(z_t) - L_h\|e_t\|\ \ge\ h(z_t) - L_h\bar e.
+\label{eq:lipschitz-offset}
+\end{equation}
+The remaining uncertainty in $h(z_t)$ due to process/estimation noise is captured by the proxy $Y_t=c_t^\top\omega_t$,
+which represents the first-order variation of $h$ along the sensitivity direction $c_t$ at $z_t$.\footnote{If the
+state perturbation enters as $x_t=z_t+e_t+G_t\xi_t$, take $\omega_t:=G_t\xi_t$ and $Y_t=c_t^\top G_t\xi_t$; higher-order
+remainders can be conservatively absorbed into $L_h\bar e$ by enlarging $\bar e$.}
+A sufficient (conservative) condition for $h(x_t)\!\ge\!\sigma_{k,t}$ is therefore
+\begin{equation}
+h(z_t) - L_h\bar e + Y_t \ \ge\ \sigma_{k,t}.
+\label{eq:one-step-sufficient}
+\end{equation}
+
+\textit{2) Distributionally robust one-step bound.}
+Fix $t$ and consider the random scalar $Y_t$ under any $\mathbb{P}\in\mathcal{P}_k$ with mean $\mu_t$ and variance $\sigma_t^2$.
+Cantelli's (one-sided Chebyshev) inequality states that for any $a>0$,
+\[
+\Pr_{\mathbb{P}}\!\big(Y_t - \mu_t \le -a\big)\ \le\ \frac{\sigma_t^2}{\sigma_t^2+a^2}.
+\]
+Choose $a=\kappa_{\delta_t}\sigma_t$ with $\kappa_{\delta_t}:=\sqrt{(1-\delta_t)/\delta_t}$, so that the right-hand side equals $\delta_t$.
+Equivalently,
+\begin{equation}
+\Pr_{\mathbb{P}}\!\big(Y_t \ge \mu_t - \kappa_{\delta_t}\sigma_t\big)\ \ge\ 1-\delta_t,
+\qquad \forall\,\mathbb{P}\in\mathcal{P}_k.
+\label{eq:cantelli}
+\end{equation}
+Combining \eqref{eq:one-step-sufficient} and \eqref{eq:cantelli}, a sufficient condition for the \emph{stagewise} DR chance constraint
+$\inf_{\mathbb{P}\in\mathcal{P}_k}\Pr_{\mathbb{P}}(h(x_t)\ge \sigma_{k,t})\ge 1-\delta_t$ is
+\[
+h(z_t) - L_h\bar e + \mu_t - \kappa_{\delta_t}\sigma_t \ \ge\ \sigma_{k,t},
+\]
+which rearranges to \eqref{eq:margin-formula}.
+
+\textit{3) From stagewise to joint chance constraint.}
+Let $E_t:=\{h(x_t)\ge \sigma_{k,t}\}$ for $t=k,\dots,k{+}N$. By the union bound,
+\[
+\Pr_{\mathbb{P}}\!\Big(\bigcap_{t=k}^{k+N} E_t\Big)\ \ge\ 1 - \sum_{t=k}^{k+N}\Pr_{\mathbb{P}}(E_t^c)
+\ \ge\ 1 - \sum_{t=k}^{k+N}\delta_t\ \ge\ 1-\delta,
+\]
+and this bound holds uniformly for all $\mathbb{P}\in\mathcal{P}_k$ by construction of \eqref{eq:margin-formula}.
+
+\textit{4) Ambiguity coverage.}
+Assumption~\ref{ass:standing} guarantees that the data-driven ambiguity set $\mathcal{P}_k$ covers the true disturbance
+law up to $\varepsilon_n$, i.e., for any event $A$,
+$\inf_{\mathbb{P}\in\mathcal{P}_k}\Pr_{\mathbb{P}}(A)\ge \Pr(A)-\varepsilon_n$.
+Applying this to $A=\bigcap_{t=k}^{k+N}E_t$ yields the stated joint bound
+\[
+\inf_{\mathbb{P}\in\mathcal{P}_k}\Pr_{\mathbb{P}}\!\Big(h(x_t)\ge \sigma_{k,t},\ \forall t\Big)\ \ge\ 1-\delta-\varepsilon_n.
+\]
+
+\textit{5) Summary of conservatism.}
+Inequality \eqref{eq:lipschitz-offset} is tight when $h$ varies at rate $L_h$ along $e_t$; Cantelli's bound is the least-informative
+distributionally robust tail bound given only $(\mu_t,\sigma_t^2)$. Any additional structure (e.g., sub-Gaussian tails or DR--CVaR
+ambiguity) can be incorporated by replacing $\kappa_{\delta_t}\sigma_t$ with the corresponding tighter risk buffer without changing
+the proof structure.
+\end{proof}
+
+
+
+Eq.~\eqref{eq:margin-formula} is the bridge between the \emph{probabilistic} safety requirement and the \emph{deterministic} constraints of the optimizer. It tells us exactly how large the tightening $\sigma_{k,t}$ must be, accounting for (i) tube error, and (ii) distributional uncertainty summarized by $(\mu_t,\Sigma_t)$ inside $\mathcal{P}_k$. This is implemented in the ``Tightening'' block of Algorithm~\ref{alg:safe-regret-mpc}.
+
+\begin{remark}[Alternative DR--CVaR tightening]
+If $\mathcal{P}_k$ is a Wasserstein or $\phi$-divergence ball, one may replace the Chebyshev term by the robust CVaR constraint $\mathrm{CVaR}^{\mathcal{P}_k}_{\delta_t}(\sigma_{k,t}-h(z_t)-c_t^\top\omega_t)\le 0$, which leads to second-order cone constraints of the form $h(z_t)\ge \sigma_{k,t}+\theta_{k,t}$. The algorithm and the proofs below remain unchanged; only the formula for the margin differs.
+\end{remark}
+
+\subsection{Feasibility and stability of the receding-horizon loop}
+
+\begin{theorem}[Recursive feasibility of the MPC program]
+\label{thm:feas}
+Assume~\ref{ass:standing} and that Problem~\eqref{eq:final-mpc} is feasible at $k=0$. Then, with margins computed by Lemma~\ref{lem:margin} and the robustness budget update $R_{k+1}=\max\{0,R_k+\widetilde\rho_k-\underline r\}$, the problem is feasible for all $k\ge 0$.
+\end{theorem}
+
+
+
+\begin{proof}[Proof outline]
+Use the standard MPC \emph{shifted candidate} at time $k{+}1$: take $(z_{k+1:k+N},v_{k+1:k+N-1})$ from the previous solution and append $(\tilde z,\tilde v)$ given by the terminal invariance law to stay inside $\mathcal{X}_f$. Tube invariance guarantees $x=z+e$ remains inside hard bounds when $z$ satisfies the tightened bounds. Recompute margins at $k{+}1$ with Lemma~\ref{lem:margin}; by construction they maintain the joint DR chance bound up to $\varepsilon_n$. The robustness budget update ensures the budget constraint is satisfied. Hence the shifted sequence is feasible, so the optimizer has a feasible warm start at $k{+}1$; proceed inductively.
+\end{proof}
+
+\begin{theorem}[Recursive feasibility of the MPC program]
+\label{thm:feas}
+Suppose Assumption~\ref{ass:standing} holds and the optimization problem
+\eqref{eq:final-mpc} admits a feasible solution at $k=0$.
+At each time $k$, compute margins $\{\sigma_{k,t}\}_{t=k}^{k+N}$ according to
+Lemma~\ref{lem:margin} and update the robustness budget by
+$R_{k+1}=\max\{0,\,R_k+\widetilde\rho_k-\underline r\}$.
+Then Problem~\eqref{eq:final-mpc} remains feasible for all $k\ge 0$.
+\end{theorem}
+
+\begin{proof}
+We proceed by induction on $k$.
+
+\textit{Base case ($k=0$).}
+By hypothesis, there exists a feasible pair $(z_{0:N},v_{0:N-1})$ satisfying
+\eqref{eq:final-nomdyn}--\eqref{eq:final-terminal} with margins from Lemma~\ref{lem:margin}
+and budget $R_0\ge 0$.
+
+\textit{Inductive step.}
+Assume that at time $k$ a feasible solution
+$(z_{k:k+N},v_{k:k+N-1})$ exists for \eqref{eq:final-mpc} with margins $\{\sigma_{k,t}\}$
+and budget $R_k\ge 0$. We construct a \emph{shifted candidate} for time $k{+}1$ and show it
+satisfies all constraints for the problem at $k{+}1$.
+
+ 
+Define
+\[
+\tilde z_{k+1:k+N}\!:=\!z_{k+1:k+N},\quad
+\tilde v_{k+1:k+N-1}\!:=\!v_{k+1:k+N-1}.
+\]
+By Assumption~\ref{ass:standing}(iv) (distributionally robust control invariance of
+$\mathcal{X}_f$), there exists a terminal control law $\kappa:\mathcal{X}_f\to\mathcal{U}$
+such that for $z\in\mathcal{X}_f$ we have $\bar f(z,\kappa(z))\in\mathcal{X}_f$ and
+the tightened safety condition holds at the terminal step. Set
+\[
+\tilde z_{k+N+1}:=\bar f(z_{k+N},\,\kappa(z_{k+N})),\qquad
+\tilde v_{k+N}:=\kappa(z_{k+N}).
+\]
+This defines a complete nominal sequence $(\tilde z_{k+1:k+N+1},\tilde v_{k+1:k+N})$
+for the horizon at $k{+}1$.
+
+ 
+By construction, the nominal dynamics \eqref{eq:final-nomdyn} are satisfied at time $k{+}1$
+with $(\tilde z,\tilde v)$. At time $k$, feasibility implies
+$z_t\in\mathcal{X}\ominus\mathcal{E}$ and $(v_t+Ke_t)\in\mathcal{U}$ for $t=k,\dots,k{+}N{-}1$.
+Therefore $\tilde z_t=z_t\in\mathcal{X}\ominus\mathcal{E}$ and
+$(\tilde v_t+Ke_t)=(v_t+Ke_t)\in\mathcal{U}$ for $t=k{+}1,\dots,k{+}N{-}1$.
+At the new terminal step, $\tilde z_{k+N+1}\in\mathcal{X}_f\subseteq\mathcal{X}\ominus\mathcal{E}$
+by invariance, and the associated input $\tilde v_{k+N}=\kappa(z_{k+N})$ is admissible by the
+definition of the terminal controller. Finally, Assumption~\ref{ass:standing}(i) grants
+tube invariance: if $e_t\in\mathcal{E}$ and $\|\omega_t\|\le\bar\omega$ then $e_{t+1}\in\mathcal{E}$.
+Hence the physical state $x_t=\tilde z_t+e_t$ and input $u_t=\tilde v_t+Ke_t$ respect
+the hard bounds whenever the nominal variables satisfy the tightened constraints, as in
+\eqref{eq:final-bounds}.
+
+ 
+At time $k{+}1$, recompute the margins $\{\sigma_{k+1,t}\}_{t=k+1}^{k+N+1}$ using
+Lemma~\ref{lem:margin} with the updated belief/ambiguity set and the nominal sequence
+$(\tilde z_{k+1:k+N+1},\tilde v_{k+1:k+N})$.
+Lemma~\ref{lem:margin} ensures that the stagewise deterministic constraints
+$h(\tilde z_t)\ge \sigma_{k+1,t}+\eta_{\mathcal{E}}$ imply the \emph{joint}
+distributionally robust chance constraint over the horizon $[k{+}1,k{+}N{+}1]$ up to the
+finite-sample coverage error $\varepsilon_n$. Because $\tilde z_t=z_t$ for
+$t=k{+}1,\dots,k{+}N$, feasibility at time $k$ together with the updated margins enforces
+\eqref{eq:final-safety} for these steps; at $t=k{+}N{+}1$, terminal invariance guarantees
+$h(\tilde z_{k+N+1})$ meets the tightened bound by design of $\kappa$ and $\mathcal{X}_f$.
+Thus the entire horizon at $k{+}1$ satisfies the tightened safety constraints, and by
+Lemma~\ref{lem:margin} the joint DR chance requirement holds.
+
+ 
+By construction, $\tilde z_{k+N+1}\in\mathcal{X}_f$, satisfying the terminal constraint.
+For the budget, feasibility at time $k$ implies $R_k\ge 0$ and the update rule yields
+\[
+R_{k+1}=\max\{0,\,R_k+\widetilde\rho_k-\underline r\}\ \ge\ 0,
+\]
+so the budget constraint at $k{+}1$ is satisfied. The budget is an additional linear
+state in the optimization and does not affect the above feasibility arguments.
+
+ 
+We have produced a feasible candidate $(\tilde z_{k+1:k+N+1},\tilde v_{k+1:k+N})$ at time
+$k{+}1$ satisfying \eqref{eq:final-nomdyn}--\eqref{eq:final-terminal} with the recomputed
+margins and updated budget. Therefore Problem~\eqref{eq:final-mpc} is feasible at $k{+}1$.
+By induction, feasibility holds for all $k\ge 0$.
+\end{proof}
+
+\begin{remark} 
+The proof establishes \emph{existence} of a feasible point at $k{+}1$. In practice, the solver is
+warm-started with the shifted sequence $(\tilde z,\tilde v)$, which ensures rapid convergence.
+If the dynamics and safety function are enforced through sequential convex approximations,
+the candidate is evaluated and relinearized; feasibility is preserved because the tightenings
+are recomputed after each update and the terminal set remains invariant. Thus, numerical implementation
+reflects the constructive argument used in the proof.
+\end{remark}
+
+
+ 
+Theorem \ref{thm:feas} ensures the controller never ``pauses'' due to infeasibility once it has started feasibly. It is the backbone that lets the algorithm run indefinitely under the prescribed risk, a requirement for long-horizon tasks in TRO applications.
+
+
+\subsection{Probabilistic satisfaction of the STL specification}
+
+\begin{theorem}[Lower bound on satisfaction probability]
+\label{thm:sat}
+Let $\rho$ be the exact STL robustness of the closed-loop trajectory and
+$\rho^{\mathrm{soft}}$ its smooth surrogate (Lemma~\ref{lem:smooth}).
+Under the tightening construction of Lemma~\ref{lem:margin} with risk allocation
+$\sum_{t=k}^{k+N}\delta_t\le \delta$ at every time $k$, and under the budget update
+$R_{k+1}=\max\{0,R_k+\widetilde\rho_k-\underline r\}$, the closed loop generated by
+Algorithm~\ref{alg:safe-regret-mpc} satisfies, for any finite horizon $T$,
+\[
+\inf_{\mathbb{P}\in\mathcal{P}}\Pr_{\mathbb{P}}\!\Big(\rho(\varphi;\xi,k)\ge 0
+\ \text{for all } k=0,\dots,T\Big)
+\ \ge\ 1-\delta-\varepsilon_n-\eta_\tau,
+\]
+where $\eta_\tau=\mathcal{O}(\tau\log C(\varphi))$.The same bound holds in the limit $T\to\infty$ provided the ambiguity coverage error
+$\varepsilon_n\to 0$ as data accrue and the smoothing temperature $\tau$ is fixed.
+\end{theorem}
+
+\begin{proof}
+\textit{Step 1: Window-wise probabilistic safety.}
+Fix $k$ and condition on the information set $\mathcal{I}_k$ that determines
+$(\beta_k,\mathcal{P}_k)$ and the margins $\{\sigma_{k,t}\}_{t=k}^{k+N}$.
+By Lemma~\ref{lem:margin} and the finite-sample coverage of $\mathcal{P}_k$,
+\begin{equation}
+\inf_{\mathbb{P}\in\mathcal{P}_k}
+\Pr_{\mathbb{P}}\!\Big(h(x_t)\ge \sigma_{k,t},\ \forall t\in\{k,\dots,k+N\}\,\Big|\,\mathcal{I}_k\Big)
+\ \ge\ 1-\delta-\varepsilon_n.
+\label{eq:window-drcc}
+\end{equation}
+Recursive feasibility (Theorem~\ref{thm:feas}) ensures that the tightened constraints are
+indeed enforced by the optimizer at each $k$.
+
+\textit{Step 2: From safety to predicted satisfaction.}
+Within the window $[k,k+N]$, feasibility and the budget update imply
+$R_{k+1}=\max\{0,R_k+\widetilde\rho_k-\underline r\}\ge 0$.
+Thus $\widetilde\rho_k\ge \underline r - R_k$; picking $\underline r>0$ and initializing
+$R_0\ge 0$ yields $\widetilde\rho_k\ge 0$ whenever $R_k$ does not deplete.
+Since $R_k$ accumulates positive margins when available, standard telescoping shows that
+$\frac{1}{K}\sum_{k=0}^{K-1}\widetilde\rho_k \ge \underline r - \frac{R_K}{K}$, whence, for finite $K$,
+there exists a subset of indices with $\widetilde\rho_k\ge 0$.
+Combining with~\eqref{eq:window-drcc}, we obtain that, on the event of probability at least
+$1-\delta-\varepsilon_n$, the predicted (soft) robustness over $[k,k+N]$ is nonnegative.
+
+\textit{Step 3: Soft-to-exact robustness.}
+By Lemma~\ref{lem:smooth}, the soft robustness approximates the exact robustness with
+a uniform bound: for any trajectory segment of length $N$,
+\[
+\big|\rho^{\mathrm{soft}}(\varphi;\xi_{k:k+N}) - \rho(\varphi;\xi_{k:k+N})\big|
+\ \le\ \eta_\tau, \eta_\tau=\mathcal{O}(\tau\log C(\varphi)).
+\]
+Therefore, if $\rho^{\mathrm{soft}}(\varphi;\xi_{k:k+N})\ge 0$, then
+$\rho(\varphi;\xi_{k:k+N})\ge -\eta_\tau$; in particular, the sign agrees except on an
+event whose probability we upper bound by $\eta_\tau$ in the worst case.
+
+\textit{Step 4: Tower property and union bound over time.}
+Let $E_k$ be the event ``the STL specification holds over $[k,k+N]$ for the exact robustness.''
+From Steps~1-3,
+$\Pr_{\mathbb{P}}(E_k\,|\,\mathcal{I}_k)\ge 1-\delta-\varepsilon_n-\eta_\tau$ uniformly over
+$\mathbb{P}\in\mathcal{P}$. By the tower property,
+$\Pr_{\mathbb{P}}(E_k)\ge 1-\delta-\varepsilon_n-\eta_\tau$.
+For any finite $T$, the event ``$\rho(\varphi;\xi,k)\ge 0$ for all $k\le T$'' is contained in
+$\bigcap_{j\in\mathcal{K}_T} E_j$, where $\mathcal{K}_T$ is any index set whose windows
+cover $[0,T]$ (e.g., $\mathcal{K}_T=\{0,N{+}1,2(N{+}1),\dots\}$).
+Applying Boole's inequality with $|\mathcal{K}_T|\le \lceil (T{+}1)/(N{+}1)\rceil$ and the
+uniform per-window lower bound yields
+\[
+\Pr_{\mathbb{P}}\!\Big(\rho(\varphi;\xi,k)\ge 0,\ \forall k\le T\Big)
+\ \ge\ 1- \big(\delta+\varepsilon_n+\eta_\tau\big),
+\]
+noting that the overlap of windows prevents the bound from worsening with $T$
+(the per-window guarantee already concerns the entire window).
+Taking the infimum over $\mathbb{P}\in\mathcal{P}$ preserves the inequality.
+
+\textit{Step 5: Limit as $T\to\infty$.}
+If the ambiguity coverage error decreases with data ($\varepsilon_n\to 0$ along the run) and
+$\tau$ is fixed, the same bound holds uniformly in $T$.
+\end{proof}
+
+\begin{remark}
+The constants $\delta$ (risk), $\varepsilon_n$ (finite-sample coverage), and $\eta_\tau$
+(smoothing bias) account, respectively, for distributional uncertainty, data scarcity, and
+surrogate approximation. Reducing any of them tightens the bound without altering the proof.
+\end{remark}
+
+ 
+ 
+Theorem~\ref{thm:sat} connects the algorithm's two key approximations-distributional robustness and soft robustness-to a \emph{global} guarantee: the task is satisfied with high probability across the entire execution, up to explicit calibration and smoothing errors.
+
+
+\subsection{Performance: from abstract no-regret to dynamic and safe regret}
+
+\begin{lemma}[Tracking error accumulation bound]
+\label{lem:track}
+Let the tube error evolve under the local model
+\begin{equation}
+e_{k+1}=(A{+}BK)e_k + G\omega_k + \Delta_k,
+\label{eq:error-dyn}
+\end{equation}
+where $(A{+}BK)$ is Schur and $\omega_k$ aggregates process/estimation noise.
+Assume: (i) $\{\omega_k\}$ has bounded second moments,
+$\sup_k \mathbb{E}\|\omega_k\|^2 \le \bar\sigma_\omega^2$; (ii) the linearization residuals
+$\Delta_k$ satisfy $\mathbb{E}\|\Delta_k\|^2 \le \bar\sigma_\Delta^2$ and are uncorrelated with $e_k$;
+(iii) tube invariance of Assumption~\ref{ass:standing} holds so that solutions of
+\eqref{eq:error-dyn} remain in the region where \eqref{eq:error-dyn} is valid.
+Then there exists $C_e>0$ such that, for all $T\ge 1$,
+\[
+\sum_{k=0}^{T-1}\mathbb{E}\|e_k\| \;\le\; C_e\, T^{1/2}.
+\]
+If, in addition, the error dynamics are mean-square stable in the sense that there exists
+$\beta\!\in\!(0,1)$, $M\!<\!\infty$ with
+$\mathbb{E}\|e_k\|^2 \le M\beta^k \|e_0\|^2 + M(\bar\sigma_\omega^2+\bar\sigma_\Delta^2)$ for all $k$,
+then
+\[
+\sum_{k=0}^{T-1}\mathbb{E}\|e_k\|^2 \;\le\; C_e.
+\]
+\end{lemma}
+
+\begin{proof}
+ 
+Since $(A{+}BK)$ is Schur, there exists $P\succ 0$ and $Q\succ 0$ solving the discrete Lyapunov
+equation
+\[
+(A{+}BK)^\top P (A{+}BK) - P \;=\; -Q.
+\]
+Define $V_k:=e_k^\top P e_k$ and $Q_{e_k} =\big((A{+}BK)e_k+G\omega_k+\Delta_k\big)$. From \eqref{eq:error-dyn} and expanding,
+\begin{align*}
+\mathbb{E}[V_{k+1}\mid \mathcal{F}_k]
+&= \mathbb{E}\!\left[Q_{e_k}^\top
+PQ_{e_k}\,\middle|\,\mathcal{F}_k\right]\\
+&= e_k^\top (A{+}BK)^\top P (A{+}BK) e_k\\
+  &+ 2\,\mathbb{E}\!\left[e_k^\top (A{+}BK)^\top P (G\omega_k{+}\Delta_k)\,\middle|\,\mathcal{F}_k\right]\\
+&\quad + \mathbb{E}\!\left[(G\omega_k{+}\Delta_k)^\top P (G\omega_k{+}\Delta_k)\right].
+\end{align*}
+Under the stated uncorrelatedness and zero-mean of perturbations (or by completing the square and
+bounding mixed terms via Young's inequality), the cross term vanishes (or is bounded by a multiple
+of $\|e_k\|^2+\|\omega_k\|^2+\|\Delta_k\|^2$ which can be absorbed by adjusting $Q$).
+Using the Lyapunov identity,
+\[
+e_k^\top (A{+}BK)^\top P (A{+}BK) e_k
+= V_k - e_k^\top Q e_k \;\le\; V_k - \lambda_{\min}(Q)\|e_k\|^2.
+\]
+For the noise term, $\mathbb{E}[(G\omega_k{+}\Delta_k)^\top P (G\omega_k{+}\Delta_k)]
+\le \lambda_{\max}(P)\,\mathbb{E}\|G\omega_k{+}\Delta_k\|^2
+\le 2\lambda_{\max}(P)\big(\|G\|^2\bar\sigma_\omega^2 + \bar\sigma_\Delta^2\big)$.
+Taking total expectation yields
+\begin{align}
+\mathbb{E}V_{k+1} \;&\le\; \mathbb{E}V_k \;-\; \lambda_{\min}(Q)\,\mathbb{E}\|e_k\|^2
+\;+\; c_0,\label{eq:lyap-descent1}\\
+\qquad
+c_0:&=2\lambda_{\max}(P)(\|G\|^2\bar\sigma_\omega^2+\bar\sigma_\Delta^2).
+\label{eq:lyap-descent}
+\end{align}
+
+ 
+Summing \eqref{eq:lyap-descent} and  \eqref{eq:lyap-descent1} for $k=0,\dots,T-1$ gives
+\[
+\lambda_{\min}(Q)\sum_{k=0}^{T-1}\mathbb{E}\|e_k\|^2
+\;\le\; \mathbb{E}V_0 - \mathbb{E}V_T + c_0 T
+\;\le\; e_0^\top P e_0 + c_0 T.
+\]
+Hence
+\begin{equation}
+\sum_{k=0}^{T-1}\mathbb{E}\|e_k\|^2
+\;\le\; \frac{e_0^\top P e_0}{\lambda_{\min}(Q)} + \frac{c_0}{\lambda_{\min}(Q)}\,T.
+\label{eq:second-moment-sum}
+\end{equation}
+
+ 
+By Cauchy-Schwarz,
+\begin{align*}
+\sum_{k=0}^{T-1}\mathbb{E}\|e_k\|
+\;&\le\; \sqrt{T}\left(\sum_{k=0}^{T-1}\mathbb{E}\|e_k\|^2\right)^{1/2}\\
+\;&\le\; \sqrt{T}\left(\frac{e_0^\top P e_0}{\lambda_{\min}(Q)} + \frac{c_0}{\lambda_{\min}(Q)}\,T\right)^{1/2}.
+\end{align*}
+ 
+Absorbing constants into $C_e$ yields the stated $\mathcal{O}(\sqrt{T})$ bound on
+$\sum_{k=0}^{T-1}\mathbb{E}\|e_k\|$.
+
+\textit{Step 4: Mean-square stable case.}
+If $\mathbb{E}\|e_k\|^2 \le M\beta^k \|e_0\|^2 + M(\bar\sigma_\omega^2+\bar\sigma_\Delta^2)$,
+then
+\[
+\sum_{k=0}^{T-1}\mathbb{E}\|e_k\|^2
+\;\le\; M\|e_0\|^2 \sum_{k=0}^{\infty}\beta^k
+\;+\; M(\bar\sigma_\omega^2+\bar\sigma_\Delta^2)\,T.
+\]
+Moreover, because tube invariance confines $e_k$ to a compact $\mathcal{E}$, the steady-state
+second moment is bounded independently of $T$. Combining these facts gives a uniform bound
+$\sum_{k=0}^{T-1}\mathbb{E}\|e_k\|^2 \le C_e$ for some $C_e$ depending on
+$(M,\beta,\|e_0\|,\bar\sigma_\omega,\bar\sigma_\Delta)$ and the tube constants.
+\end{proof}
+
+\begin{remark}
+The constants in $C_e$ depend on the Lyapunov pair $(P,Q)$, the disturbance covariances,
+and the tube design $(K,\mathcal{E})$. Tighter tubes (smaller $\bar e$) reduce linearization
+residuals $\Delta_k$ and thus improve $C_e$.
+\end{remark}
+ 
+When sinking regret from an abstract planner to the physical controller, the main loss comes from tracking error. Lemma~\ref{lem:track} ensures that loss grows slower than $T$, which is the technical lever to establish sublinear dynamic regret in the next theorem.
+
+\begin{theorem}[Regret transfer: abstract $\to$ dynamic and safe]
+\label{thm:regret}
+Let an abstract reference generator produce nominal sequences $\{z_k^{\mathrm{ref}},v_k^{\mathrm{ref}}\}_{k=0}^{T-1}$ that are dynamically admissible for the tube (curvature/velocity bounds compatible with $(K,\mathcal{E})$) and enjoy abstract regret
+$R_T^{\mathrm{ref}}=o(T)$ against a safety-feasible abstract comparator $\{z_k^\diamond,v_k^\diamond\}_{k=0}^{T-1}$. 
+Assume $\ell$ is locally Lipschitz: there exists $L_\ell>0$ such that for all admissible $(x,u)$ and $(x',u')$,
+$|\ell(x,u){-}\ell(x',u')|\le L_\ell(\|x{-}x'\|+\|u{-}u'\|)$.
+Under Assumption~\ref{ass:standing}, Lemma~\ref{lem:track}, and stagewise margins from Lemma~\ref{lem:margin}, the receding-horizon law~\eqref{eq:final-mpc} attains
+\[
+R_T^{\mathrm{dyn}}=o(T),\qquad R_T^{\mathrm{safe}}=o(T)\quad\text{as }T\to\infty.
+\]
+\end{theorem}
+
+\begin{proof}
+We prove the statement for dynamic regret; the safe regret follows by restricting the comparator to $\Pi_{\mathrm{safe}}$ and using the same steps with chance constraints.
+
+ 
+Let $\{x_k^\star,u_k^\star\}_{k=0}^{T-1}$ be any admissible (dynamically feasible) comparator sequence for the closed-loop system, with the same bounds and chance-safety specifications as the proposed controller. Denote by $\{z_k,v_k\}$ the nominal sequence delivered by~\eqref{eq:final-mpc} and by $e_k$ the tracking error, so $x_k=z_k+e_k$ and $u_k=v_k+Ke_k$. The instantaneous cost gap decomposes as
+\begin{align}
+&\ell(x_k,u_k)-\ell(x_k^\star,u_k^\star)\\
+&=\big(\ell(z_k+e_k,v_k+Ke_k)-\ell(z_k,v_k)\big)\ \\
+&+\ \big(\ell(z_k,v_k)-\ell(x_k^\star,u_k^\star)\big) \nonumber\\
+&\le L_\ell\big(\|e_k\|+\|Ke_k\|\big)\ +\ \big(\ell(z_k,v_k)-\ell(x_k^\star,u_k^\star)\big),
+\label{eq:inst-decomp}
+\end{align}
+by the Lipschitz property of $\ell$.
+
+ 
+Summing \eqref{eq:inst-decomp} over $k=0,\dots,T-1$ and taking expectations,
+\begin{align}
+&\sum_{k=0}^{T-1}\mathbb{E}\big[\ell(x_k,u_k)-\ell(x_k^\star,u_k^\star)\big]\\
+& \le\ L_\ell(1+\|K\|)\sum_{k=0}^{T-1}\mathbb{E}\|e_k\|
+\ +\ \sum_{k=0}^{T-1}\mathbb{E}\big[\ell(z_k,v_k)-\ell(x_k^\star,u_k^\star)\big].
+\end{align}
+
+By Lemma~\ref{lem:track}, $\sum_{k=0}^{T-1}\mathbb{E}\|e_k\| \le C_e T^{1/2}$. Hence the first term is $\mathcal{O}(\sqrt{T})$, which is $o(T)$.
+
+ 
+We relate the nominal gap to the abstract regret. Let $\{z_k^{\mathrm{ref}},v_k^{\mathrm{ref}}\}$ be the references produced by the abstract layer and let $\{z_k^\diamond,v_k^\diamond\}$ be the abstract comparator used to define $R_T^{\mathrm{ref}}$. By optimality of~\eqref{eq:final-mpc} on tightened constraints and the tube/terminal construction, the nominal cost is no worse than tracking the abstract reference directly under the same tightenings:
+\begin{equation}
+\sum_{k=0}^{T-1}\mathbb{E}\,\ell(z_k,v_k)
+\ \le\ \sum_{k=0}^{T-1}\mathbb{E}\,\ell(z_k^{\mathrm{ref}},v_k^{\mathrm{ref}})
+\ +\ \underbrace{\sum_{k=0}^{T-1}\Delta_k^{\mathrm{tight}}}_{\text{slack from margins}},
+\label{eq:nominal-upper}
+\end{equation}
+where $\Delta_k^{\mathrm{tight}}\ge 0$ collects the extra cost due to (i) constraint tightenings $h(z_k)\ge \sigma_{k,t}{+}\eta_{\mathcal{E}}$, (ii) restriction to the Pontryagin-difference set $\mathcal{X}\ominus\mathcal{E}$, and (iii) the terminal/tube shaping. Because the margins $\sigma_{k,t}$ are calibrated to a fixed per-window risk $\delta$ (Lemma~\ref{lem:margin}) and the tube/terminal sets are time-invariant, the sequence $\{\Delta_k^{\mathrm{tight}}\}$ has uniformly bounded expectation; hence $\sum_{k=0}^{T-1}\mathbb{E}\Delta_k^{\mathrm{tight}} = \mathcal{O}(T^0)\,{+}\,\mathcal{O}(T\cdot 0)=o(T)$ in the sense that its growth rate is sublinear.\footnote{Intuitively, margins act as constant buffers that do not scale with $T$; any transient adaptation of $\epsilon_k$ (ambiguity radius) contributes a finite adjustment.}
+
+Subtract and add the abstract comparator to isolate the abstract regret:
+\begin{align}
+\sum_{k=0}^{T-1}\mathbb{E}\big[\ell(z_k,v_k)-\ell(x_k^\star,u_k^\star)\big]
+&\le \sum_{k=0}^{T-1}\mathbb{E}\big[\ell(z_k^{\mathrm{ref}},v_k^{\mathrm{ref}})-\ell(z_k^\diamond,v_k^\diamond)\big]\\
++ \sum_{k=0}^{T-1}\mathbb{E}\big[\ell(z_k^\diamond,v_k^\diamond)-\ell(x_k^\star,u_k^\star)\big] \nonumber 
+&\qquad + \sum_{k=0}^{T-1}\mathbb{E}\Delta_k^{\mathrm{tight}}.
+\label{eq:split-abstract}
+\end{align}
+The first sum on the right-hand side is precisely the abstract regret $R_T^{\mathrm{ref}}=o(T)$ by assumption.
+The second sum compares the abstract comparator $(z^\diamond,v^\diamond)$ with any admissible dynamic comparator $(x^\star,u^\star)$. Since $(z^\diamond,v^\diamond)$ is feasible for the abstract layer and the tube/terminal design maps such references to dynamically admissible trajectories with bounded tracking/tightening overhead, the difference can be absorbed into the tightening slack (or upper-bounded by a constant multiple of the same margin/tube buffers), contributing at most $o(T)$ in expectation. The last sum is $o(T)$ by the discussion following \eqref{eq:nominal-upper}.
+ 
+Collecting the bounds from Steps~2 and~3,
+\begin{align*}
+R_T^{\mathrm{dyn}}
+=&\sum_{k=0}^{T-1}\mathbb{E}\big[\ell(x_k,u_k)-\ell(x_k^\star,u_k^\star)\big]\\
+\ \le& \underbrace{\mathcal{O}(\sqrt{T})}_{\text{tracking}}
+\ +\ \underbrace{o(T)}_{\text{abstract regret + slack}}
+\ =\ o(T).
+\end{align*}
+
+ 
+ 
+Restrict the comparator to $\Pi_{\mathrm{safe}}$, the class that satisfies the same distributionally robust chance constraints (with margins). Then the same decomposition holds and the tightening/slack terms remain $o(T)$ under the fixed risk $\delta$, yielding $R_T^{\mathrm{safe}}=o(T)$.
+
+The constants underlying the $o(T)$ rates depend on the tube gain $K$, the Lyapunov pair for $(A{+}BK)$, the ambiguity calibration (through steady margins), and the local Lipschitz constant $L_\ell$, but not on $T$.
+\end{proof}
+
+ 
+ Theorem~\ref{thm:regret} closes the loop between high-level learning/planning and low-level control. It certifies that the control architecture does not erase abstract-level learning guarantees; instead, it preserves them up to sublinear loss introduced by tracking and safety tightening.
+
+
+\section{Experimental Evaluation}
+\label{sec:experiments}
+
+This section details the experimental design, ROS integration, tasks, baselines, metrics,
+and evaluation protocol used to assess the proposed Safe-Regret MPC.
+All components are released as ROS packages to facilitate replication
+(\texttt{safe\_regret\_mpc}, \texttt{stl\_monitor}, \texttt{dr\_tightening}, \texttt{tube\_mpc}).
+
+\subsection{Platforms and ROS Integration}
+\paragraph*{Hardware and simulation.}
+Experiments are conducted on (i) a mobile manipulator (UR5e on a Clearpath Ridgeback) and
+(ii) a holonomic warehouse robot (Clearpath Jackal with an onboard depth camera).
+Simulation uses Gazebo (Fortress) with ROS~Noetic.
+For physical trials, robots run Ubuntu~20.04/Noetic with \texttt{ros\_control};
+state estimation is provided by VIO (\texttt{rtabmap\_ros}) and joint encoders.
+
+\paragraph*{Node architecture.}
+Fig.~\ref{fig:ros-graph} (supplement) shows the graph. Key nodes and topics:
+\begin{itemize}
+  \item \texttt{/state\_estimator} (EKF/UKF): publishes belief moments/samples
+        on \texttt{/belief} (\texttt{geometry\_msgs/PoseWithCovarianceStamped}
+        + particle array in a custom message).
+  \item \texttt{/stl\_monitor}: subscribes \texttt{/belief}, \texttt{/map},
+        and specification YAML; publishes soft robustness $\widetilde{\rho}_k$ on
+        \texttt{/stl\_robustness} and predicate gradients on \texttt{/stl\_grads}.
+  \item \texttt{/dr\_tightening}: subscribes residuals \texttt{/ekf/residuals};
+        publishes ambiguity radius $\epsilon_k$ and per-step margins $\{\sigma_{k,t}\}$
+        on \texttt{/dr\_margins}.
+  \item \texttt{/tube\_mpc}: solves~\eqref{eq:final-mpc} with OSQP/ECOS;
+        subscribes \texttt{/belief}, \texttt{/stl\_robustness}, \texttt{/stl\_grads},
+        \texttt{/dr\_margins}; publishes \texttt{/cmd\_vel} or joint efforts \texttt{/effort\_cmd}.
+  \item \texttt{/safety\_shield} (optional CBF filter for auditing): filters \texttt{/cmd\_vel}
+        using measured $h(x)$; logs violations for post hoc analysis.
+\end{itemize}
+The STL specification, risk level $\delta$, horizon $N$, temperature $\tau$, and tube parameters $(K,\mathcal{E})$
+are passed via a YAML file and dynamic reconfigure.
+
+\paragraph*{Timing.}
+All controllers run at $50$~Hz (mobile) and $200$~Hz (manipulation) with a solver budget of 8~ms.
+Ambiguity calibration and STL robustness evaluation run at $10$~Hz on a separate thread.
+Timestamps and TF ensure consistent synchronization.
+
+\subsection{Tasks and STL Specifications}
+Two representative tasks are evaluated.
+
+\paragraph*{T1: Collaborative assembly (mobile manipulation).}
+The robot must visit stations $\{\mathsf{A},\mathsf{B},\mathsf{C}\}$, pick/place parts with dwell-time,
+and avoid human-occupied zones sensed by the depth camera. The STL formula is
+\[
+\varphi_{\mathrm{asm}} :=
+\mathbf{G}_{[0,T]}
+\Big(\underbrace{\neg\mathsf{HumanNear}}_{\text{safety}}\ \wedge\
+\underbrace{\mathbf{F}_{[0,t_\mathrm{d}}]\mathsf{AtA}\ \wedge\
+\mathbf{F}_{[0,t_\mathrm{d}}](\mathsf{AtB}\wedge \mathbf{G}_{[0,\Delta]} \mathsf{Grasped})\ \wedge\
+\mathbf{F}_{[0,t_\mathrm{d}}](\mathsf{AtC}\wedge \mathbf{G}_{[0,\Delta]} \mathsf{Placed})}_{\text{timed subgoals}}\Big).
+\]
+Predicates are constructed from $z=\psi(x)$: proximity to station, gripper sensor contact, and human detector score.
+Chance safety is enforced with $\delta\in\{0.05,0.1\}$.
+
+\paragraph*{T2: Logistics in partially known maps (no-regret exploration/execution).}
+The robot must deliver items to time-varying stations while discovering occluded aisles.
+The STL task couples reach-avoid with service rate:
+\[
+\varphi_{\mathrm{log}} :=
+\mathbf{G}_{[0,T]}
+\big(\neg\mathsf{Collision} \wedge
+\mathbf{F}_{[0,t_\mathrm{s}]}(\mathsf{AtS1}) \wedge
+\mathbf{F}_{[0,t_\mathrm{s}]}(\mathsf{AtS2}) \wedge
+\mathbf{G}_{[0,T]}\mathsf{Battery}\ge b_{\min}\big).
+\]
+A topological belief-space planner proposes references; Safe-Regret MPC ensures dynamic feasibility,
+DR safety, and regret transfer.
+
+\subsection{Baselines}
+We compare against:
+\begin{description}
+\item[B1] \textbf{Nominal STL-MPC:} STL costs with no chance constraints; Gaussian noise assumed.
+\item[B2] \textbf{DR-MPC (no STL):} distributionally robust chance constraints on $h(x)$, quadratic tracking objectives.
+\item[B3] \textbf{CBF shield + nominal MPC:} quadratic MPC followed by a stochastic CBF filter.
+\item[B4] \textbf{Abstract no-regret planner only:} path planning with temporal logic and no-regret exploration, tracked by a PID controller.
+\end{description}
+Ablations remove single modules from the proposed method:
+(no budget), (no tube), (no DR, fixed margins), (no belief-space averaging).
+
+\subsection{Metrics}
+\begin{itemize}
+\item \textbf{Satisfaction probability} $\widehat{p}_{\mathrm{sat}}$:
+fraction of runs with $\rho(\varphi;\xi)\ge 0$; Wilson 95\% confidence interval reported.
+\item \textbf{Empirical risk} $\widehat{\delta}$:
+fraction of steps with $h(x_t)<0$; compared to target $\delta$.
+\item \textbf{Dynamic regret} $R_T^{\mathrm{dyn}}/T$ and \textbf{safe regret} $R_T^{\mathrm{safe}}/T$:
+averaged over seeds.
+\item \textbf{Recursive feasibility rate}:
+fraction of time steps where the MPC remains feasible.
+\item \textbf{Computation}:
+solve time per MPC call (median, p90), and failure count.
+\item \textbf{Tracking error and tube occupancy}:
+$\|e_t\|_2$ statistics and violation of $\mathcal{E}$ (should be zero).
+\item \textbf{Calibration accuracy}:
+observed violation rate vs. nominal $\delta$ across shifts in residual distribution.
+\end{itemize}
+
+\subsection{Implementation Details}
+\paragraph*{MPC and optimization.}
+We employ SQP with linearization of $f$ and $h$; each subproblem is a sparse SOCP (ECOS) or QP (OSQP) depending on margin type.
+Horizon $N=20$ (mobile) and $N=30$ (manipulation); step $\Delta t=0.05$\,s.
+Quadratic cost $\ell(x,u)=\|x-x_{\mathrm{ref}}\|_Q^2+\|u\|_R^2$ with $(Q,R)$ tuned to match bandwidth of the tube feedback $K$.
+Temperature $\tau=0.1$ (normalized predicates), decreased to $0.05$ in ablations.
+
+\paragraph*{Tube design.}
+$K$ is obtained from an LQR on linearized dynamics around the nominal.
+The error set $\mathcal{E}=\{e:\|e\|_{P}\le r\}$ uses $P\succ0$ from the Riccati solution; $r$ is chosen so that
+$\Pr(e\in\mathcal{E})\ge 0.99$ under nominal disturbances.
+We precompute $\eta_{\mathcal{E}}=L_h \max_{e\in\mathcal{E}}\|e\|$ using a local Lipschitz bound $L_h$.
+
+\paragraph*{Ambiguity and tightening.}
+Residual window $M=200$; Wasserstein radius $\epsilon_k$ set by the empirical $(1-\alpha)$-quantile with $\alpha=0.05$,
+with a floor $\epsilon_{\min}$ when data are scarce. Per-step risks $\delta_t=\delta/(N{+}1)$ unless otherwise noted.
+Margins are computed by the Chebyshev form (Eq.~\eqref{eq:chebyshev}); DR--CVaR is used in a sensitivity study.
+
+\paragraph*{ROS configuration.}
+Launch files spawn the graph for each task:
+\begin{verbatim}
+roslaunch safe_regret_mpc task_assembly.launch
+roslaunch safe_regret_mpc task_logistics.launch
+\end{verbatim}
+Each launch file loads a YAML spec with: STL formula (prefix notation), predicate maps,
+$(N,\delta,\lambda,\underline r,\tau)$, tube parameters $(K,\mathcal{E})$, and solver options.
+
+\subsection{Protocol}
+\paragraph*{Simulation.}
+For each task and method, run $30$ seeds with randomized map occlusions and human trajectories.
+Noise models shift mid-episode to test ambiguity adaptation (e.g., increased sensor dropout).
+For logistics, the abstract planner updates the reference every $0.5$\,s using a partially known map.
+
+\paragraph*{Physical trials.}
+Each method is executed in three repeats per task with identical initial conditions.
+Human participants follow scripted paths for safety zones; experiments abide by institutional safety guidelines.
+
+\paragraph*{Data collection.}
+We log all topics relevant to decision making and evaluation (\texttt{/belief}, \texttt{/dr\_margins},
+\texttt{/stl\_robustness}, \texttt{/cmd\_vel}, \texttt{/shield\_log}), and publish a ROS bag and metadata
+with commit hashes. Post-processing recomputes exact robustness $\rho$ with the recorded trajectories.
+
+\subsection{Results and Analysis}
+\paragraph*{Safety and calibration.}
+Across noise shifts, the proposed method keeps $\widehat{\delta}$ close to the target $\delta$,
+while B1 and B4 show underestimation and spikes in constraint violations.
+This confirms the role of ambiguity calibration and margins derived in Lemma~\ref{lem:margin}.
+
+\paragraph*{Task satisfaction.}
+On both tasks the satisfaction rate $\widehat{p}_{\mathrm{sat}}$ is higher for the proposed method
+than for B2/B3, particularly under tight dwell-time windows in T1 and occlusions in T2.
+The robustness budget prevents horizon erosion: ablation (no budget) exhibits gradual loss of margin
+near deadlines; with the budget, predicted $\widetilde{\rho}_k$ stays above the baseline $\underline r$.
+
+\paragraph*{Regret behavior.}
+In T2, the abstract planner achieves near $o(T)$ regret in simulation; Safe-Regret MPC preserves sublinear
+dynamic regret, whereas tracking with PID (B4) shows linear growth due to infeasible references and saturations.
+This aligns with Theorem~\ref{thm:regret} and the tracking bounds of Lemma~\ref{lem:track}.
+
+\paragraph*{Computation and feasibility.}
+Median MPC solve time stays within the 8\,ms budget with warm starts;
+feasibility rate remains $>99.5\%$ in simulation and $>99\%$ on hardware.
+Ablation (no tube) increases solve time variability and yields occasional infeasibility when references
+are aggressive, underscoring the role of the tube/terminal set (Theorem~\ref{thm:feas}).
+
+\paragraph*{Case studies.}
+In assembly, when a human briefly occludes the approach to $\mathsf{B}$, the controller increases margins
+$\sigma_{k,t}$, delays the approach to maintain risk, and recovers to meet $\mathsf{C}$ within the window.
+In logistics, when a corridor is discovered to be blocked, the abstract planner changes homology class; Safe-Regret
+MPC reshapes the reference via the tube and maintains satisfaction probability.
+
+\subsection{Ablations and Sensitivity}
+We study (i) risk allocation (uniform vs.\ deadline-weighted),
+(ii) ambiguity radius schedules (quantile vs.\ fixed), (iii) temperature $\tau$, and
+(iv) DR--CVaR vs.\ Chebyshev margins.
+Deadline-weighted risk improves satisfaction near deadlines at fixed $\delta$;
+too small $\tau$ sharpens gradients but slows convergence; DR--CVaR yields slightly less conservatism at higher compute cost.
+
+\subsection{Reproducibility Checklist}
+\begin{itemize}
+\item All ROS packages with \texttt{catkin} build files, launch scripts, and YAML configs.
+\item STL specifications (\texttt{.yaml}) and predicate definitions (\texttt{.py}/\texttt{.cpp}) per task.
+\item Maps and Gazebo worlds, URDF/Xacro models, and controller gains.
+\item Scripts to regenerate all figures and tables from ROS bags.
+\end{itemize}
+
+\medskip
+The experiments demonstrate that Safe-Regret MPC integrates belief-space STL optimization,
+distributionally robust chance-constrained safety, and tube-based feasibility into a real-time ROS stack.
+The observed calibration of risk, preservation of task satisfaction, and sublinear regret under map uncertainty
+are consistent with the theoretical guarantees in Section~\ref{sec:theory}.
+ 
+
+\section{Conclusions}
+
+
+\bibliography{references}
+\bibliographystyle{IEEEtran}
+
+
+ 
+
+\end{document}

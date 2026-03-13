@@ -16,6 +16,7 @@
 #include <fstream>
 
 #include "TubeMPC.h"
+#include "MetricsCollector.h"
 #include <Eigen/Core>
 #include <Eigen/QR>
 
@@ -27,6 +28,7 @@ class TubeMPCNode
     public:
         TubeMPCNode();
         int get_thread_numbers();
+        void printMetricsSummary();  // New: Print metrics summary
         
     private:
         ros::NodeHandle _nh;
@@ -56,8 +58,9 @@ class TubeMPCNode
 
         TubeMPC _tube_mpc;
         map<string, double> _tube_mpc_params;
-        
-        double _mpc_steps, _ref_cte, _ref_etheta, _ref_vel, _w_cte, _w_etheta, _w_vel, 
+        Metrics::MetricsCollector _metrics_collector;  // New: Metrics collector
+
+        double _mpc_steps, _ref_cte, _ref_etheta, _ref_vel, _w_cte, _w_etheta, _w_vel,
                _w_angvel, _w_accel, _max_angvel, _max_throttle, _bound_value;
         
         double _dt, _w, _w_filtered, _throttle, _speed, _max_speed;
@@ -69,6 +72,8 @@ class TubeMPCNode
         int _num_residuals;
         double _disturbance_bound;
         VectorXd _e_current;
+        std::string _metrics_output_csv;
+        double _target_delta;
 
         double polyeval(Eigen::VectorXd coeffs, double x);
         Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals, int order);

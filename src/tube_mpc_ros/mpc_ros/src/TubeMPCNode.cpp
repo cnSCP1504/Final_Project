@@ -88,6 +88,16 @@ TubeMPCNode::TubeMPCNode()
     _num_residuals = 0;
     _e_current = VectorXd::Zero(6);
 
+    // Initialize metrics collector
+    pn.param<std::string>("metrics_output_csv", _metrics_output_csv, "/tmp/tube_mpc_metrics.csv");
+    pn.param("target_risk_delta", _target_delta, 0.1);  // Default 10% risk
+
+    _metrics_collector = Metrics::MetricsCollector(_metrics_output_csv);
+    _metrics_collector.setTargetRisk(_target_delta);
+    _metrics_collector.setupROSPublishers(_nh);
+
+    ROS_INFO("MetricsCollector initialized with CSV output: %s", _metrics_output_csv.c_str());
+
     _tube_mpc_params["DT"] = _dt;
     _tube_mpc_params["STEPS"]    = _mpc_steps;
     _tube_mpc_params["REF_CTE"]  = _ref_cte;
@@ -228,7 +238,11 @@ void TubeMPCNode::amclCB(const geometry_msgs::PoseWithCovarianceStamped::ConstPt
 
                 file << "tracking time"<< "," << tracking_time_sec << "," <<  tracking_time_nsec << "\n";
 
+                // Print metrics summary at goal
+                printMetricsSummary();
+
                 file.close();
+                _metrics_collector.closeCSV();  // Close metrics CSV
 
                 start_timef = false;
             }
@@ -353,16 +367,77 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         nominal_state << 0, 0, 0, v, cte, etheta;
         
         ros::Time begin = ros::Time::now();
-        vector<double> mpc_results = _tube_mpc.Solve(state, coeffs);    
+        vector<double> mpc_results = _tube_mpc.Solve(state, coeffs);
         ros::Time end = ros::Time::now();
-        cout << "Duration: " << end.sec << "." << end.nsec << endl << begin.sec<< "."  << begin.nsec << endl;
-              
-        _w = mpc_results[0]; 
-        _throttle = mpc_results[1]; 
+
+        // Calculate solve time in milliseconds
+        double solve_time_ms = (end - begin).toSec() * 1000.0;
+        bool mpc_feasible = !mpc_results.empty();  // Check if MPC solve was successful
+
+        cout << "MPC Solve Time: " << solve_time_ms << " ms, Feasible: " << mpc_feasible << endl;
+
+        _w = mpc_feasible ? mpc_results[0] : 0.0;
+        _throttle = mpc_feasible ? mpc_results[1] : 0.0; 
 
         _w_filtered = 0.5 * _w_filtered + 0.5 * _w;
-        
-        _speed = v + _throttle * _dt;  
+
+        _speed = v + _throttle * _dt;
+
+        // === Collect Metrics ===
+        Metrics::MetricsCollector::MetricsSnapshot snapshot;
+        snapshot.timestamp = ros::Time::now().toSec();
+        snapshot.cte = cte;
+        snapshot.etheta = etheta;
+        snapshot.vel = _speed;
+        snapshot.angvel = _w_filtered;
+
+        // Tracking error norm (from current error state)
+        snapshot.tracking_error_norm = _e_current.norm();
+
+        // Tube status
+        snapshot.tube_radius = _tube_mpc.getTubeRadius();
+        double tube_threshold = _tube_mpc.getTubeRadius() * 1.1;  // 10% tolerance
+        snapshot.tube_violation = (snapshot.tracking_error_norm > tube_threshold) ?
+            snapshot.tracking_error_norm - tube_threshold : 0.0;
+
+        // Safety constraint (example: distance from collision)
+        // For now, use a simple safety margin based on cte and etheta
+        // In Phase 3, this will be replaced by actual h(x) from DR constraints
+        double safety_margin = 1.0 - (std::abs(cte) + std::abs(etheta) * 0.5);
+        snapshot.safety_margin = safety_margin;
+        snapshot.safety_violation = (safety_margin < 0.0) ? 1.0 : 0.0;
+
+        // MPC solve metrics
+        snapshot.mpc_solve_time = solve_time_ms;
+        snapshot.mpc_feasible = mpc_feasible;
+
+        // Cost computation (stage cost ℓ(x,u))
+        double stage_cost = _w_cte * cte * cte +
+                           _w_etheta * etheta * etheta +
+                           _w_vel * (_speed - _ref_vel) * (_speed - _ref_vel) +
+                           _w_angvel * _w_filtered * _w_filtered +
+                           _w_accel * _throttle * _throttle;
+        snapshot.cost = stage_cost;
+
+        // Reference cost (for regret calculation)
+        // For now, use a simple heuristic - in Phase 4, this will come from reference planner
+        double reference_cost = _w_cte * 0.5 * 0.5 + _w_etheta * 0.1 * 0.1;  // Target: small errors
+        snapshot.regret_dynamic = stage_cost - reference_cost;
+        snapshot.regret_safe = snapshot.regret_dynamic;  // Same for now
+
+        // STL robustness (placeholder for Phase 2)
+        snapshot.robustness = safety_margin;  // Simple proxy for now
+
+        // Record metrics
+        _metrics_collector.recordMetrics(snapshot);
+
+        // Update regret
+        _metrics_collector.updateRegret(stage_cost, reference_cost, reference_cost);
+
+        // Publish metrics every N steps
+        if (idx % 10 == 0) {
+            _metrics_collector.publishMetrics();
+        }  
         if (_speed >= _max_speed)
             _speed = _max_speed;
         if(_speed < 0.03)
@@ -451,6 +526,46 @@ void TubeMPCNode::visualizeTube()
     }
     
     _pub_tube.publish(_tube_path);
+}
+
+void TubeMPCNode::printMetricsSummary()
+{
+    std::cout << "\n";
+    _metrics_collector.printSummary();
+
+    // Print confidence interval for satisfaction probability
+    auto ci = _metrics_collector.computeSatisfactionCI(0.95);
+    std::cout << "\n95% Confidence Interval for Satisfaction Probability: ["
+              << std::fixed << std::setprecision(4)
+              << ci.first << ", " << ci.second << "]" << std::endl;
+
+    // Write detailed analysis to file
+    std::ofstream summary_file("/tmp/tube_mpc_summary.txt");
+    if (summary_file.is_open()) {
+        summary_file << "Tube MPC Performance Summary\n";
+        summary_file << "==============================\n\n";
+
+        auto metrics = _metrics_collector.getAggregatedMetrics();
+
+        summary_file << "Safety Metrics:\n";
+        summary_file << "  Empirical Risk (δ̂):       " << metrics.empirical_risk << "\n";
+        summary_file << "  Target Risk (δ):          " << _target_delta << "\n";
+        summary_file << "  Calibration Error:        " << metrics.calibration_error << "\n\n";
+
+        summary_file << "Performance Metrics:\n";
+        summary_file << "  Feasibility Rate:         " << metrics.feasibility_rate * 100 << "%\n";
+        summary_file << "  Mean Tracking Error:      " << metrics.mean_tracking_error << "\n";
+        summary_file << "  Median Solve Time:        " << metrics.median_solve_time_ms << " ms\n\n";
+
+        summary_file << "Regret Analysis:\n";
+        summary_file << "  Cumulative Dynamic:       " << metrics.cumulative_dynamic_regret << "\n";
+        summary_file << "  Average Dynamic:          " << metrics.average_dynamic_regret << "\n\n";
+
+        summary_file << "95% CI for Satisfaction: [" << ci.first << ", " << ci.second << "]\n";
+
+        summary_file.close();
+        ROS_INFO("Detailed summary written to /tmp/tube_mpc_summary.txt");
+    }
 }
 
 int main(int argc, char **argv)

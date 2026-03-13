@@ -59,7 +59,7 @@ ADD_EXECUTABLE( tube_nav_mpc src/navMPC.cpp src/navMPCNode.cpp )
 TARGET_LINK_LIBRARIES(tube_nav_mpc ipopt ${catkin_LIBRARIES} )
 
 # Tube MPC Node
-ADD_EXECUTABLE( tube_TubeMPC_Node src/TubeMPC.cpp src/TubeMPCNode.cpp )
+ADD_EXECUTABLE( tube_TubeMPC_Node src/TubeMPC.cpp src/TubeMPCNode.cpp src/MetricsCollector.cpp )
 TARGET_LINK_LIBRARIES(tube_TubeMPC_Node ipopt ${catkin_LIBRARIES} )
 
 # Local planner with MPC_Node for tracking
