@@ -49,10 +49,23 @@
 - ✅ LQR误差反馈控制
 - ✅ ROS集成与参数配置
 - ✅ 基础导航任务验证
+- ✅ **机器人运动问题修复**（Launch文件参数依赖）
+- ✅ **综合指标收集系统**（论文评估指标）
+- ✅ **性能参数优化**（硬编码默认值修复）
+- ✅ **调试与监控系统**（实时状态输出）
 
 **文件位置**:
 - `src/tube_mpc_ros/mpc_ros/src/TubeMPC.cpp`
-- `src/tube_mpc_ros/mpc_ros/params/tube_mpc_params.yaml`
+- `src/tube_mpc_ros/mpc_ros/src/TubeMPCNode.cpp`
+- `src/tube_mpc_ros/mpc_ros/src/MetricsCollector.cpp` (新增)
+- `src/tube_mpc_ros/mpc_ros/include/MetricsCollector.h` (新增)
+- `src/tube_mpc_ros/mpc_ros/params/tube_mpc_params.yaml` (优化)
+- `src/tube_mpc_ros/mpc_ros/launch/tube_mpc_simple.launch` (新增)
+
+**关键修复**:
+1. 修复硬编码默认值: `mpc_w_vel: 200.0 → 10.0`, `mpc_max_angvel: 0.5 → 2.0`
+2. 创建简化launch文件避免参数依赖问题
+3. 实现完整指标收集: 跟踪误差、管半径、后悔值、安全性等
 
 ---
 

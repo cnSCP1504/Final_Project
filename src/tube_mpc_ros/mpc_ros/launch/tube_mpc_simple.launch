@@ -1,0 +1,88 @@
+<?xml version="1.0"?>
+<launch>
+
+  <!--  ===== 简化的Tube MPC导航启动文件 ===== -->
+  <!-- 确保TubeMPC节点一定会启动，避免参数依赖问题 -->
+
+  <!-- 基础参数 -->
+  <arg name="use_sim_time" value="true"/>
+  <arg name="x_pos" default="0.0"/>
+  <arg name="y_pos" default="0.0"/>
+  <arg name="z_pos" default="0.0"/>
+  <arg name="yaw" default="-1.507"/>
+
+  <!-- Gazebo仿真 -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(find tube_mpc_ros)/worlds/sq_world.world"/>
+    <arg name="paused" value="false"/>
+    <arg name="use_sim_time" value="true"/>
+    <arg name="gui" value="true"/>
+  </include>
+
+  <!-- 机器人模型 -->
+  <param name="robot_description" command="$(find xacro)/xacro $(find servingbot_description)/urdf/servingbot.urdf.xacro"/>
+
+  <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model"
+        args="-urdf -model servingbot -x $(arg x_pos) -y $(arg y_pos) -z $(arg z_pos) -Y $(arg yaw) -param robot_description" />
+
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher">
+    <param name="publish_frequency" type="double" value="50.0" />
+  </node>
+
+  <!-- 地图服务器 -->
+  <node name="map_server" pkg="map_server" type="map_server"
+        args="$(find tube_mpc_ros)/map/sq_world.yaml" output="screen">
+    <param name="frame_id" value="map"/>
+  </node>
+
+  <!-- AMCL定位 -->
+  <node pkg="amcl" type="amcl" name="amcl" output="screen">
+    <rosparam file="$(find tube_mpc_ros)/params/amcl_params.yaml" command="load" />
+    <param name="initial_pose_x" value="$(arg x_pos)"/>
+    <param name="initial_pose_y" value="$(arg y_pos)"/>
+    <param name="initial_pose_a" value="$(arg yaw)"/>
+  </node>
+
+  <!-- ===== move_base ===== -->
+  <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+    <!-- 参数文件 -->
+    <rosparam file="$(find tube_mpc_ros)/params/costmap_common_params.yaml" command="load" ns="global_costmap" />
+    <rosparam file="$(find tube_mpc_ros)/params/costmap_common_params.yaml" command="load" ns="local_costmap" />
+    <rosparam file="$(find tube_mpc_ros)/params/local_costmap_params.yaml" command="load" />
+    <rosparam file="$(find tube_mpc_ros)/params/global_costmap_params.yaml" command="load" />
+
+    <!-- 全局规划器 -->
+    <param name="base_global_planner" value="global_planner/GlobalPlanner" />
+    <param name="planner_frequency" value="1.0" />
+    <param name="planner_patience" value="5.0" />
+    <rosparam file="$(find tube_mpc_ros)/params/global_planner_params.yaml" command="load" />
+
+    <!-- ===== 关键修复：强制使用Tube MPC局部规划器 ===== -->
+    <param name="base_local_planner" value="base_local_planner/TrajectoryPlannerROS"/>
+
+    <!-- ===== 关键修复：不要重映射/cmd_vel ===== -->
+    <!-- 这里的remap会导致/cmd_vel被重定向到/fake_cmd -->
+    <!-- 只有在使用非Tube MPC控制器时才需要 -->
+    <!--
+    <remap from="/cmd_vel" to="/fake_cmd" unless="$(eval controller == 'tube_mpc')"/>
+    -->
+
+  </node>
+
+  <!-- ===== Tube MPC节点 (强制启动) ===== -->
+  <node name="TubeMPC_Node" pkg="tube_mpc_ros" type="tube_TubeMPC_Node" output="screen">
+    <rosparam file="$(find tube_mpc_ros)/params/tube_mpc_params.yaml" command="load" />
+  </node>
+
+  <!-- ===== RViz可视化 ===== -->
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find tube_mpc_ros)/params/total_rviz_navigation.rviz"/>
+
+  <!-- ===== 自动导航目标 ===== -->
+  <node name="auto_nav_goal" pkg="tube_mpc_ros" type="auto_nav_goal.py" output="screen"
+        launch-prefix="bash -c 'sleep 5; $0 $@'">
+    <param name="goal_x" value="3.0"/>
+    <param name="goal_y" value="-7.0"/>
+    <param name="goal_yaw" value="0.0"/>
+  </node>
+
+</launch>
