@@ -28,10 +28,10 @@ TubeMPCNode::TubeMPCNode()
     pn.param("mpc_ref_etheta", _ref_etheta, 0.0);
     pn.param("mpc_w_cte", _w_cte, 50.0);
     pn.param("mpc_w_etheta", _w_etheta, 50.0);
-    pn.param("mpc_w_vel", _w_vel, 200.0);
+    pn.param("mpc_w_vel", _w_vel, 10.0);  // 修复：降低默认值，鼓励机器人移动
     pn.param("mpc_w_angvel", _w_angvel, 100.0);
     pn.param("mpc_w_accel", _w_accel, 50.0);
-    pn.param("mpc_max_angvel", _max_angvel, 0.5);
+    pn.param("mpc_max_angvel", _max_angvel, 2.0);  // 修复：提高角速度限制，允许正常转向
     pn.param("mpc_max_throttle", _max_throttle, 1.0);
     pn.param("mpc_bound_value", _bound_value, 1.0e3);
     pn.param("disturbance_bound", _disturbance_bound, 0.1);
@@ -290,8 +290,20 @@ void TubeMPCNode::estimateDisturbance(const nav_msgs::Odometry& odom)
 }
 
 void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
-{          
-    if(_goal_received && !_goal_reached && _path_computed )    
+{
+    // 调试输出：显示控制状态
+    static int debug_counter = 0;
+    if(debug_counter++ % 50 == 0) {  // 每5秒输出一次状态
+        cout << "=== Control Loop Status ===" << endl;
+        cout << "Goal received: " << (_goal_received ? "YES" : "NO") << endl;
+        cout << "Goal reached: " << (_goal_reached ? "YES" : "NO") << endl;
+        cout << "Path computed: " << (_path_computed ? "YES" : "NO") << endl;
+        cout << "Current speed: " << _speed << " m/s" << endl;
+        cout << "Max speed: " << _max_speed << " m/s" << endl;
+        cout << "========================" << endl;
+    }
+
+    if(_goal_received && !_goal_reached && _path_computed )
     {
         if(!start_timef)
         {
@@ -377,11 +389,28 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         cout << "MPC Solve Time: " << solve_time_ms << " ms, Feasible: " << mpc_feasible << endl;
 
         _w = mpc_feasible ? mpc_results[0] : 0.0;
-        _throttle = mpc_feasible ? mpc_results[1] : 0.0; 
+        _throttle = mpc_feasible ? mpc_results[1] : 0.0;
 
         _w_filtered = 0.5 * _w_filtered + 0.5 * _w;
 
+        // 速度计算前的调试信息
+        if(debug_counter % 20 == 0) {  // 每2秒输出一次详细信息
+            cout << "=== MPC Results ===" << endl;
+            cout << "MPC feasible: " << (mpc_feasible ? "YES" : "NO") << endl;
+            cout << "MPC results size: " << mpc_results.size() << endl;
+            if(mpc_results.size() >= 2) {
+                cout << "w (ang_vel): " << mpc_results[0] << endl;
+                cout << "throttle: " << mpc_results[1] << endl;
+            }
+            cout << "Current v (odom): " << v << endl;
+            cout << "_dt: " << _dt << endl;
+        }
+
         _speed = v + _throttle * _dt;
+
+        if(debug_counter % 20 == 0) {
+            cout << "Computed speed (before limits): " << _speed << endl;
+        }
 
         // === Collect Metrics ===
         Metrics::MetricsCollector::MetricsSnapshot snapshot;
@@ -490,9 +519,18 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
     
     if(_pub_twist_flag)
     {
-        _twist_msg.linear.x  = _speed; 
+        _twist_msg.linear.x  = _speed;
         _twist_msg.angular.z = _w_filtered;
         _pub_twist.publish(_twist_msg);
+
+        // 调试输出：显示发布的控制命令
+        if(debug_counter % 50 == 0) {  // 每5秒输出一次
+            cout << "=== Published Control Command ===" << endl;
+            cout << "linear.x: " << _twist_msg.linear.x << " m/s" << endl;
+            cout << "angular.z: " << _twist_msg.angular.z << " rad/s" << endl;
+            cout << "Publisher active: " << (_pub_twist_flag ? "YES" : "NO") << endl;
+            cout << "==================================" << endl;
+        }
     }
 }
 
