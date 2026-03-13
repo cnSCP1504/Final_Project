@@ -71,10 +71,10 @@ TubeMPCNode::TubeMPCNode()
     _goal_received = false;
     _goal_reached  = false;
     _path_computed = false;
-    _throttle = 0.0; 
+    _throttle = 0.0;
     _w = 0.0;
     _w_filtered = 0.0;
-    _speed = 0.3;
+    _speed = 0.5;  // 提高初始速度，避免从零开始
 
     _twist_msg = geometry_msgs::Twist();
     _mpc_traj = nav_msgs::Path();
@@ -440,8 +440,8 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         }  
         if (_speed >= _max_speed)
             _speed = _max_speed;
-        if(_speed < 0.03)
-            _speed = 0.03;
+        if(_speed < 0.1)  // 提高最小速度阈值，避免机器人爬行
+            _speed = 0.1;
 
         if(_debug_info)
         {
