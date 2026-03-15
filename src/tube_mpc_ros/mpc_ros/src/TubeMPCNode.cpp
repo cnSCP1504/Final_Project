@@ -191,7 +191,7 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
                 sampling = sampling + 1;  
             }
            
-            if(odom_path.poses.size() >= 6 )
+            if(odom_path.poses.size() >= 2 )  // 降低要求：至少2个点（原来是6）
             {
                 _odom_path = odom_path;
                 _path_computed = true;
@@ -201,7 +201,7 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
             }
             else
             {
-                cout << "Failed to path generation" << endl;
+                cout << "Failed to path generation: only " << odom_path.poses.size() << " points" << endl;
                 _waypointsDist = -1;
             }
         }
@@ -406,11 +406,38 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
             cout << "_dt: " << _dt << endl;
         }
 
-        _speed = v + _throttle * _dt;
+        _speed = v + _throttle;  // 修复：throttle直接作为速度增量，不乘以dt
 
         if(debug_counter % 20 == 0) {
             cout << "Computed speed (before limits): " << _speed << endl;
         }
+
+        // === 智能转向策略：避免倒退 ===
+        // 暂时禁用以排查问题
+        /*
+        const double HEADING_ERROR_THRESHOLD = 1.05;  // 60度 (弧度)
+        const double HEADING_ERROR_CRITICAL = 1.57;   // 90度 (弧度)
+
+        if(std::abs(etheta) > HEADING_ERROR_THRESHOLD) {
+            // 航向误差过大，进入转向优先模式
+            if(std::abs(etheta) > HEADING_ERROR_CRITICAL) {
+                // 严重偏离：完全停止前进，只旋转
+                _speed = 0.0;
+                if(debug_counter % 20 == 0) {
+                    cout << "⚠️  CRITICAL HEADING ERROR: Pure rotation mode" << endl;
+                    cout << "   etheta: " << etheta << " rad (" << (etheta * 180.0 / M_PI) << " deg)" << endl;
+                }
+            } else {
+                // 中等偏离：大幅减速，允许慢速转向
+                _speed = _speed * 0.2;  // 降低到20%
+                if(debug_counter % 20 == 0) {
+                    cout << "⚠️  High heading error: Reduced speed for turning" << endl;
+                    cout << "   etheta: " << etheta << " rad (" << (etheta * 180.0 / M_PI) << " deg)" << endl;
+                    cout << "   Speed reduced to: " << _speed << " m/s" << endl;
+                }
+            }
+        }
+        */
 
         // === Collect Metrics ===
         Metrics::MetricsCollector::MetricsSnapshot snapshot;
@@ -466,11 +493,11 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         // Publish metrics every N steps
         if (idx % 10 == 0) {
             _metrics_collector.publishMetrics();
-        }  
+        }
         if (_speed >= _max_speed)
             _speed = _max_speed;
-        if(_speed < 0.1)  // 提高最小速度阈值，避免机器人爬行
-            _speed = 0.1;
+        if(_speed < 0.3)  // 最小速度阈值
+            _speed = 0.3;
 
         if(_debug_info)
         {

@@ -222,6 +222,16 @@ test/scripts/upgrade_to_new_ipopt.sh
    ```
 4. **Monitor performance**: Check `/mpc_trajectory` and `/tube_boundaries` in RViz
 
+### ⚠️ Important: Git Workflow Preferences
+
+**DO NOT automatically commit or push changes to git**
+
+- Code changes should be tested thoroughly before committing
+- Wait for explicit user approval before creating git commits
+- Do NOT run `git commit` or `git push` automatically
+- User will manually commit when ready
+- Focus on implementation and testing, not version control operations
+
 ## Tube MPC Specifics
 
 ### Controller Architecture
