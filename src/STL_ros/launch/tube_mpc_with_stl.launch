@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    Tube MPC Navigation with STL Integration
+    Launches both Tube MPC controller and STL monitor for Safe-Regret MPC
+  -->
+
+  <arg name="simulation" default="true" doc="Run in simulation"/>
+  <arg name="enable_stl" default="true" doc="Enable STL monitoring"/>
+  <arg name="stl_formula_file" default="$(find stl_ros)/params/formulas.yaml"/>
+
+  <!-- ==================== Tube MPC Controller ==================== -->
+  <include file="$(find tube_mpc_ros)/launch/tube_mpc_navigation.launch">
+    <arg name="simulation" value="$(arg simulation)"/>
+    <arg name="enable_stl_integration" value="$(arg enable_stl)"/>
+  </include>
+
+  <!-- ==================== STL Monitor ==================== -->
+  <include if="$(arg enable_stl)" file="$(find stl_ros)/launch/stl_monitor.launch">
+    <arg name="simulation" value="$(arg simulation)"/>
+    <arg name="formula_file" value="$(arg stl_formula_file)"/>
+    <arg name="enable_visualization" value="true"/>
+  </include>
+
+  <!-- ==================== RViz Visualization ==================== -->
+  <node if="$(arg simulation)" pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find tube_mpc_ros)/rviz/tube_mpc_with_stl.rviz"/>
+
+</launch>

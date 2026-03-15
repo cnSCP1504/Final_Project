@@ -51,3 +51,20 @@ MPCPlannerROS:
   disturbance_window_size: 100
   tube_visualization: true
   error_feedback_gain: 0.6
+
+# ==================== STL Integration Parameters ====================
+# Enable STL monitoring and cost modification (Safe-Regret MPC)
+enable_stl_integration: false  # Set to true to enable STL feedback
+
+# STL objective weight λ (from manuscript Eq. 7)
+# J_k = E[ℓ(x,u)] - λ * ρ^soft(φ; x_{k:k+N})
+stl_weight_lambda: 1.0         # STL weight in MPC cost function
+
+# Budget constraint penalty (for constraint violations)
+stl_budget_penalty: 10.0       # Penalty weight for budget constraint violations
+
+# STL formula configuration
+# These parameters are passed to the STL monitor
+stl_temperature_tau: 0.05      # Temperature for smooth robustness
+stl_baseline_robustness: 0.1   # Per-step robustness requirement r̲
+stl_num_samples: 100           # Monte Carlo samples for belief-space evaluation

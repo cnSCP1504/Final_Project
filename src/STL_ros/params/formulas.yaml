@@ -1,0 +1,81 @@
+# STL Formulas Configuration
+# Example STL specifications for mobile robot navigation
+
+# Formula 1: Stay within bounds
+# G_[0,T](x > 0 && x < 10 && y > 0 && y < 10)
+stay_in_bounds:
+  formula_string: "always[0,10]((x > 0) && (x < 10) && (y > 0) && (y < 10))"
+  priority: 2.0
+  lambda: 1.0
+
+# Formula 2: Maintain minimum speed
+# G_[0,T](v >= 0.3)
+maintain_speed:
+  formula_string: "always[0,10](v >= 0.3)"
+  priority: 1.0
+  lambda: 0.5
+
+# Formula 3: Eventually reach goal
+# F_[0,20](at_goal)
+reach_goal:
+  formula_string: "eventually[0,20](at_goal)"
+  priority: 3.0
+  lambda: 2.0
+  active: true
+
+# Formula 4: Avoid obstacle
+# G_[0,T](distance_to_obstacle > 1.0)
+avoid_obstacle:
+  formula_string: "always[0,10](distance_to_obstacle > 1.0)"
+  priority: 5.0
+  lambda: 1.5
+  active: true
+
+# Formula 5: Task specification (collaborative assembly example)
+# G_[0,T](¬Collision) ∧ F_[0,t_d]AtA ∧ F_[0,t_d](AtB ∧ G_[0,Δ]Grasped)
+collaborative_task:
+  formula_string: "(always[0,100](no_collision)) && (eventually[0,50](at_A)) && (eventually[0,50]((at_B) && (always[0,5](grasped))))"
+  priority: 4.0
+  lambda: 1.0
+  active: false
+
+# Formula 6: Battery constraint (logistics task)
+# G_[0,T](Battery >= b_min)
+battery_constraint:
+  formula_string: "always[0,100](battery >= 0.2)"
+  priority: 3.0
+  lambda: 1.0
+  active: false
+
+# Predicate definitions (for custom predicates)
+predicates:
+  at_goal:
+    type: "distance"
+    target: [10.0, 10.0]
+    threshold: 2.0
+
+  at_A:
+    type: "distance"
+    target: [3.0, 5.0]
+    threshold: 1.0
+
+  at_B:
+    type: "distance"
+    target: [7.0, 5.0]
+    threshold: 1.0
+
+  no_collision:
+    type: "safety"
+    min_distance: 0.5
+
+  distance_to_obstacle:
+    type: "obstacle_distance"
+    obstacle_id: 0
+
+  grasped:
+    type: "manipulation"
+    gripper_closed: true
+
+  battery:
+    type: "system_state"
+    variable: "battery_level"

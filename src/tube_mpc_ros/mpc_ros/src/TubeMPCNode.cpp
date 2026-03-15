@@ -88,6 +88,43 @@ TubeMPCNode::TubeMPCNode()
     _num_residuals = 0;
     _e_current = VectorXd::Zero(6);
 
+<<<<<<< Updated upstream
+=======
+    // Initialize metrics collector
+    pn.param<std::string>("metrics_output_csv", _metrics_output_csv, "/tmp/tube_mpc_metrics.csv");
+    pn.param("target_risk_delta", _target_delta, 0.1);  // Default 10% risk
+
+    _metrics_collector = Metrics::MetricsCollector(_metrics_output_csv);
+    _metrics_collector.setTargetRisk(_target_delta);
+    _metrics_collector.setupROSPublishers(_nh);
+
+    ROS_INFO("MetricsCollector initialized with CSV output: %s", _metrics_output_csv.c_str());
+
+    // Initialize STL Integration
+    pn.param("enable_stl_integration", _stl_enabled, false);
+    pn.param("stl_weight_lambda", _stl_weight_lambda, 1.0);
+    pn.param("stl_budget_penalty", _stl_budget_penalty, 10.0);
+
+    if (_stl_enabled) {
+        cout << "\n===== STL Integration Enabled =====" << endl;
+        cout << "stl_weight_lambda: " << _stl_weight_lambda << endl;
+        cout << "stl_budget_penalty: " << _stl_budget_penalty << endl;
+
+        // Subscribe to STL topics (commented until full integration ready)
+        // _stl_robustness_sub = _nh.subscribe("/stl_monitor/robustness", 1,
+        //                                   &TubeMPCNode::stlRobustnessCB, this);
+        // _stl_budget_sub = _nh.subscribe("/stl_monitor/budget", 1,
+        //                             &TubeMPCNode::stlBudgetCB, this);
+
+        // Publish belief and trajectory for STL
+        _stl_belief_pub = _nh.advertise<geometry_msgs::PoseStamped>("/stl_monitor/belief", 1);
+        _stl_trajectory_pub = _nh.advertise<nav_msgs::Path>("/stl_monitor/mpc_trajectory", 1);
+
+        ROS_INFO("STL Integration enabled - subscribing to STL monitor topics");
+    } else {
+        ROS_INFO("STL Integration disabled");
+    }
+
     _tube_mpc_params["DT"] = _dt;
     _tube_mpc_params["STEPS"]    = _mpc_steps;
     _tube_mpc_params["REF_CTE"]  = _ref_cte;
@@ -402,6 +439,11 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
             _mpc_traj.poses.push_back(tempPose); 
         }     
         _pub_mpctraj.publish(_mpc_traj);
+
+    // Publish STL data if enabled
+    if (_stl_enabled) {
+        publishSTLData();
+    }
         
         visualizeTube();
     }
@@ -453,6 +495,74 @@ void TubeMPCNode::visualizeTube()
     _pub_tube.publish(_tube_path);
 }
 
+<<<<<<< Updated upstream
+=======
+void TubeMPCNode::printMetricsSummary()
+{
+    std::cout << "\n";
+    _metrics_collector.printSummary();
+
+    // Print confidence interval for satisfaction probability
+    auto ci = _metrics_collector.computeSatisfactionCI(0.95);
+    std::cout << "\n95% Confidence Interval for Satisfaction Probability: ["
+              << std::fixed << std::setprecision(4)
+              << ci.first << ", " << ci.second << "]" << std::endl;
+
+    // Write detailed analysis to file
+    std::ofstream summary_file("/tmp/tube_mpc_summary.txt");
+    if (summary_file.is_open()) {
+        summary_file << "Tube MPC Performance Summary\n";
+        summary_file << "==============================\n\n";
+
+        auto metrics = _metrics_collector.getAggregatedMetrics();
+
+        summary_file << "Safety Metrics:\n";
+        summary_file << "  Empirical Risk (δ̂):       " << metrics.empirical_risk << "\n";
+        summary_file << "  Target Risk (δ):          " << _target_delta << "\n";
+        summary_file << "  Calibration Error:        " << metrics.calibration_error << "\n\n";
+
+        summary_file << "Performance Metrics:\n";
+        summary_file << "  Feasibility Rate:         " << metrics.feasibility_rate * 100 << "%\n";
+        summary_file << "  Mean Tracking Error:      " << metrics.mean_tracking_error << "\n";
+        summary_file << "  Median Solve Time:        " << metrics.median_solve_time_ms << " ms\n\n";
+
+        summary_file << "Regret Analysis:\n";
+        summary_file << "  Cumulative Dynamic:       " << metrics.cumulative_dynamic_regret << "\n";
+        summary_file << "  Average Dynamic:          " << metrics.average_dynamic_regret << "\n\n";
+
+        summary_file << "95% CI for Satisfaction: [" << ci.first << ", " << ci.second << "]\n";
+
+        summary_file.close();
+        ROS_INFO("Detailed summary written to /tmp/tube_mpc_summary.txt");
+    }
+}
+
+// ==================== STL Integration ====================
+
+void TubeMPCNode::publishSTLData() {
+    if (!_stl_enabled) return;
+
+    // Publish current belief state for STL monitoring
+    // This would typically come from AMCL or other state estimator
+    geometry_msgs::PoseStamped belief_msg;
+    belief_msg.header.stamp = ros::Time::now();
+    belief_msg.header.frame_id = _map_frame;
+
+    // Use current odometry as belief (simplified)
+    belief_msg.pose.position.x = _odom.pose.pose.position.x;
+    belief_msg.pose.position.y = _odom.pose.pose.position.y;
+    belief_msg.pose.position.z = _odom.pose.pose.position.z;
+    belief_msg.pose.orientation = _odom.pose.pose.orientation;
+
+    _stl_belief_pub.publish(belief_msg);
+
+    // Publish MPC predicted trajectory for STL evaluation
+    _stl_trajectory_pub.publish(_mpc_traj);
+
+    ROS_DEBUG("Published STL data: belief and trajectory");
+}
+
+>>>>>>> Stashed changes
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "TubeMPC_Node");

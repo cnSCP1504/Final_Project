@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Simple STL Monitor Test Launch File -->
+  <!-- For testing without full Tube MPC integration -->
+
+  <arg name="enable_visualization" default="false" doc="Enable visualization"/>
+
+  <!-- Load STL parameters -->
+  <rosparam command="load" file="$(find stl_ros)/params/stl_params.yaml" />
+
+  <!-- STL Monitor Node -->
+  <node name="stl_monitor" pkg="stl_ros" type="stl_monitor.py" output="screen">
+    <param name="enable_visualization" value="$(arg enable_visualization)"/>
+
+    <!-- Use default topics for testing -->
+    <remap from="~belief" to="/stl_monitor/belief"/>
+    <remap from="~mpc_trajectory" to="/stl_monitor/mpc_trajectory"/>
+  </node>
+
+  <!-- Optional: Test node that publishes sample data -->
+  <node name="stl_test_publisher" pkg="stl_ros" type="test_stl_ros.py" output="screen"
+        launch-prefix="bash -c 'sleep 2.0; $0 $1'" />
+
+</launch>

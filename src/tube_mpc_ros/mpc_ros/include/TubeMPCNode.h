@@ -19,6 +19,14 @@
 #include <Eigen/Core>
 #include <Eigen/QR>
 
+// Forward declarations for STL messages
+namespace stl_ros {
+    template<typename T>
+    class STLRobustness;
+    template<typename T>
+    class STLBudget;
+}
+
 using namespace std;
 using namespace Eigen;
 
@@ -70,6 +78,15 @@ class TubeMPCNode
         double _disturbance_bound;
         VectorXd _e_current;
 
+        // STL Integration
+        ros::Subscriber _stl_robustness_sub;
+        ros::Subscriber _stl_budget_sub;
+        ros::Publisher _stl_belief_pub;
+        ros::Publisher _stl_trajectory_pub;
+        bool _stl_enabled;
+        double _stl_weight_lambda;
+        double _stl_budget_penalty;
+
         double polyeval(Eigen::VectorXd coeffs, double x);
         Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals, int order);
 
@@ -80,6 +97,9 @@ class TubeMPCNode
         void controlLoopCB(const ros::TimerEvent&);
         void estimateDisturbance(const nav_msgs::Odometry& odom);
         void visualizeTube();
+
+        // STL callbacks (interface for future integration)
+        void publishSTLData();
 };
 
 #endif

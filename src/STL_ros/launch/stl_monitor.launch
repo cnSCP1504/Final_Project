@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- STL Monitor Launch File -->
+  <!-- Runs STL evaluation and publishes robustness information for MPC -->
+
+  <arg name="simulation" default="true" doc="Run in simulation mode"/>
+  <arg name="enable_visualization" default="true" doc="Enable visualization topics"/>
+  <arg name="formula_file" default="$(find stl_ros)/params/formulas.yaml" doc="STL formulas configuration"/>
+
+  <!-- Load STL parameters -->
+  <rosparam command="load" file="$(find stl_ros)/params/stl_params.yaml" />
+
+  <!-- STL Monitor Node -->
+  <node name="stl_monitor" pkg="stl_ros" type="stl_monitor.py" output="screen">
+    <param name="formula_file_path" value="$(arg formula_file)"/>
+    <param name="enable_visualization" value="$(arg enable_visualization)"/>
+
+    <!-- Remap topics for Tube MPC integration -->
+    <!-- Subscribe to MPC topics -->
+    <remap from="~belief" to="/tube_mpc/belief_state"/>
+    <remap from="~mpc_trajectory" to="/tube_mpc/predicted_trajectory"/>
+    <remap from="~robot_state" to="/robot_state"/>
+
+    <!-- Publish robustness for MPC -->
+    <remap from="~robustness" to="/tube_mpc/stl_robustness"/>
+    <remap from="~budget" to="/tube_mpc/stl_budget"/>
+
+    <!-- Visualization -->
+    <remap from="~visualization" to="/stl_visualization"/>
+  </node>
+
+  <!-- Visualization (optional) -->
+  <node if="$(arg enable_visualization)" name="stl_visualizer" pkg="stl_ros"
+        type="stl_visualizer.py" output="screen">
+    <remap from="~robustness" to="/tube_mpc/stl_robustness"/>
+    <remap from="~budget" to="/tube_mpc/stl_budget"/>
+  </node>
+
+</launch>

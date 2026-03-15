@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    Safe-Regret MPC Launch File
+    Integrated Tube MPC with STL monitoring for temporal logic task specification
+  -->
+
+  <arg name="simulation" default="true" doc="Run in simulation mode"/>
+  <arg name="enable_stl" default="true" doc="Enable STL integration"/>
+  <arg name="controller_freq" default="10" doc="Control frequency (Hz)"/>
+  <arg name="stl_config_file" default="$(find stl_ros)/params/formulas.yaml" doc="STL formula configuration"/>
+
+  <!-- ==================== STL Monitor ==================== -->
+  <group if="$(arg enable_stl)">
+    <!-- Launch STL monitor -->
+    <include file="$(find stl_ros)/launch/stl_monitor.launch">
+      <arg name="formula_file" value="$(arg stl_config_file)"/>
+      <arg name="enable_visualization" value="true"/>
+    </include>
+
+    <!-- Remap STL topics for Tube MPC integration -->
+    <remap from="/stl_monitor/belief" to="/tube_mpc/stl_belief"/>
+    <remap from="/stl_monitor/mpc_trajectory" to="/tube_mpc/stl_trajectory"/>
+    <remap from="/stl_monitor/robustness" to="/tube_mpc/stl_robustness"/>
+    <remap from="/stl_monitor/budget" to="/tube_mpc/stl_budget"/>
+  </group>
+
+  <!-- ==================== Tube MPC Controller ==================== -->
+  <node pkg="tube_mpc_ros" type="tube_TubeMPC_Node" name="tube_mpc_node" output="screen">
+    <!-- Load parameters -->
+    <rosparam command="load" file="$(find tube_mpc_ros)/params/tube_mpc_params.yaml"/>
+
+    <!-- STL Integration Parameters -->
+    <param name="enable_stl_integration" value="$(arg enable_stl)"/>
+    <param name="stl_weight_lambda" value="1.0"/>
+    <param name="stl_budget_penalty" value="10.0"/>
+
+    <!-- Control frequency -->
+    <param name="controller_freq" value="$(arg controller_freq)"/>
+
+    <!-- Topic remapping -->
+    <remap from="odom" to="/odom"/>
+    <remap from="/move_base/TrajectoryPlannerROS/global_plan" to="/move_base/TrajectoryPlannerROS/global_plan"/>
+    <remap from="/move_base_simple/goal" to="/move_base_simple/goal"/>
+
+    <!-- STL topics (if enabled) -->
+    <remap if="$(arg enable_stl)" from="/stl_monitor/belief" to="/tube_mpc/stl_belief"/>
+    <remap if="$(arg enable_stl)" from="/stl_monitor/mpc_trajectory" to="/tube_mpc/stl_trajectory"/>
+    <remap if="$(arg enable_stl)" from="/stl_monitor/robustness" to="/tube_mpc/stl_robustness"/>
+    <remap if="$(arg enable_stl)" from="/stl_monitor/budget" to="/tube_mpc/stl_budget"/>
+  </node>
+
+  <!-- ==================== Visualization ==================== -->
+  <arg name="rviz" default="true" doc="Launch RViz"/>
+  <group if="$(arg rviz)">
+    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find tube_mpc_ros)/params/rviz_navigation.rviz" required="false"/>
+  </group>
+
+  <!-- ==================== Information ==================== -->
+  <node pkg="rostopic" type="rostopic" name="stl_info" args="info /tube_mpc/stl_robustness" if="$(arg enable_stl)" output="screen"/>
+
+</launch>

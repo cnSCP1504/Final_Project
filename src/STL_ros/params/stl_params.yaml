@@ -1,0 +1,70 @@
+# STL Monitor Parameters
+# Configuration for Safe-Regret MPC integration
+
+# ==================== Monitor Configuration ====================
+prediction_horizon: 20          # MPC prediction horizon (N)
+time_step: 0.1                  # Discrete time step (dt)
+
+# ==================== Smooth Robustness ====================
+temperature_tau: 0.05           # Temperature for log-sum-exp approximation
+                                # Lower = more accurate, sharper gradients
+                                # Typical range: 0.01 - 0.1
+
+enable_gradients: true          # Enable gradient computation for MPC
+
+# ==================== Belief-Space Evaluation ====================
+num_monte_carlo_samples: 100    # Number of MC samples for E[ρ(φ)]
+                                # More samples = better accuracy, slower
+
+use_importance_sampling: false  # Use importance sampling (faster, more complex)
+
+state_dimension: 5              # State: [x, y, theta, v, w]
+
+# Initial belief uncertainty
+initial_covariance: 0.1         # Initial covariance diagonal value
+
+# ==================== Robustness Budget ====================
+baseline_robustness_r: 0.1      # Per-step requirement (r̲)
+                                # Higher = more conservative
+
+initial_budget: 0.0             # Initial budget (R_0)
+
+max_budget: 10.0                # Maximum budget accumulation
+
+enable_adaptive_budget: false   # Adaptive baseline based on satisfaction rate
+
+# ==================== MPC Integration ====================
+stl_weight_lambda: 1.0          # STL objective weight (λ)
+                                # Higher = prioritize satisfaction over tracking
+
+budget_constraint_weight: 10.0  # Penalty for budget violation
+
+enable_budget_constraints: true # Enforce budget constraints in MPC
+
+# ==================== Formula Management ====================
+formula_file_path: ""           # Path to formula definitions (set in launch file)
+
+enable_formula_parsing: true    # Enable runtime formula parsing
+
+formula_validation: true        # Validate formulas before loading
+
+# ==================== Performance ====================
+enable_caching: true            # Cache results for real-time performance
+cache_size: 10                  # Maximum cache entries
+
+enable_profiling: false         # Log computation times
+
+debug_mode: false               # Enable debug output and sample storage
+
+log_level: 2                    # 0=ERROR, 1=WARN, 2=INFO, 3=DEBUG
+
+# ==================== Visualization ====================
+enable_visualization: true      # Publish visualization topics
+publish_timestep_robustness: true  # Publish per-timestep robustness
+publish_samples: false          # Publish MC samples (debug only)
+visualization_rate: 10.0        # Visualization publish rate (Hz)
+
+# ==================== Advanced ====================
+state_noise_std: 0.1            # State noise standard deviation
+process_noise_cov: 1.0          # Process noise covariance multiplier
+enable_uncertainty_propagation: true  # Full uncertainty propagation

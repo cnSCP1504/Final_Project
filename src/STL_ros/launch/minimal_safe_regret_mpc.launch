@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    Minimal Safe-Regret MPC Launch File
+    Core STL monitoring + Tube MPC without complex dependencies
+  -->
+
+  <arg name="enable_stl" default="true" doc="Enable STL integration"/>
+  <arg name="controller_freq" default="10" doc="Control frequency (Hz)"/>
+  <arg name="debug" default="false" doc="Enable debug output"/>
+
+  <!-- ==================== STL Monitor ==================== -->
+  <group if="$(arg enable_stl)">
+    <!-- Load STL parameters -->
+    <rosparam command="load" file="$(find stl_ros)/params/stl_params.yaml" subst_value="true"/>
+
+    <!-- STL Monitor Python Node -->
+    <node name="stl_monitor" pkg="stl_ros" type="stl_monitor.py" output="screen">
+      <param name="prediction_horizon" value="20"/>
+      <param name="time_step" value="0.1"/>
+      <param name="temperature_tau" value="0.05"/>
+      <param name="num_monte_carlo_samples" value="100"/>
+      <param name="baseline_robustness_r" value="0.1"/>
+      <param name="stl_weight_lambda" value="1.0"/>
+      <param name="enable_visualization" value="true"/>
+
+      <!-- Topic configuration -->
+      <remap from="~belief" to="/stl_monitor/belief"/>
+      <remap from="~mpc_trajectory" to="/stl_monitor/mpc_trajectory"/>
+      <remap from="~robustness" to="/stl_monitor/robustness"/>
+      <remap from="~budget" to="/stl_monitor/budget"/>
+    </node>
+
+    <!-- Info node to show STL status -->
+    <node pkg="rostopic" type="rostopic" name="stl_info" args="info /stl_monitor" output="screen" if="$(arg enable_stl)"/>
+  </group>
+
+  <!-- ==================== Tube MPC Controller ==================== -->
+  <node pkg="tube_mpc_ros" type="tube_TubeMPC_Node" name="tube_mpc_node" output="screen">
+    <!-- Load parameters -->
+    <rosparam command="load" file="$(find tube_mpc_ros)/params/tube_mpc_params.yaml" subst_value="true"/>
+
+    <!-- STL Integration Parameters -->
+    <param name="enable_stl_integration" value="$(arg enable_stl)"/>
+    <param name="stl_weight_lambda" value="1.0"/>
+    <param name="stl_budget_penalty" value="10.0"/>
+    <param name="controller_freq" value="$(arg controller_freq)"/>
+    <param name="debug_info" value="$(arg debug)"/>
+
+    <!-- Standard topic remapping -->
+    <remap from="odom" to="/odom"/>
+    <remap from="/move_base/TrajectoryPlannerROS/global_plan" to="/move_base/TrajectoryPlannerROS/global_plan"/>
+    <remap from="/move_base_simple/goal" to="/move_base_simple/goal"/>
+
+    <!-- STL topic remapping -->
+    <remap if="$(arg enable_stl)" from="/stl_monitor/belief" to="/stl_monitor/belief"/>
+    <remap if="$(arg enable_stl)" from="/stl_monitor/mpc_trajectory" to="/stl_monitor/mpc_trajectory"/>
+  </node>
+
+  <!-- ==================== System Info ==================== -->
+  <node pkg="rostopic" type="rostopic" name="system_info" args="info -v" output="screen"/>
+
+</launch>
