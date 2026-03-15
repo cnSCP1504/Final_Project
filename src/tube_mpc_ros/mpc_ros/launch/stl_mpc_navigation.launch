@@ -1,0 +1,169 @@
+<launch>
+
+    <!--  ************** Global Parameters ***************  -->
+    <param name="use_sim_time" value="true"/>
+    <arg name="controller"  default="tube_mpc" doc="opt: tube_mpc, mpc, dwa, pure_pursuit"/>
+    <arg name="model"  default="serving_bot" doc="opt: serving_bot"/>
+    <arg name="tf_prefix"  default=""/>
+
+    <!-- STL-specific arguments -->
+    <arg name="enable_stl" default="true" doc="Enable STL monitoring and constraints"/>
+    <arg name="stl_config" default="$(find tube_mpc_ros)/params/stl_params.yaml" doc="STL parameter configuration file"/>
+
+    <!--  ************** GAZEBO Simulator ***************  -->
+    <arg name="x_pos" default="0.0"/>
+    <arg name="y_pos" default="0.0"/>
+    <arg name="z_pos" default="0.0"/>
+    <arg name="roll" default="0"/>
+    <arg name="pitch" default="0"/>
+    <arg name="yaw" default="-1.507"/>
+    <arg name="gui" default="true"/>
+
+    <!--  ************** Robot model ***************  -->
+    <param name="robot_description" command="$(find xacro)/xacro $(find servingbot_description)/urdf/servingbot.urdf.xacro" if="$(eval model == 'serving_bot')"/>
+
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="world_name" value="$(find tube_mpc_ros)/worlds/sq_world.world"/>
+        <arg name="paused" value="false"/>
+        <arg name="use_sim_time" value="true"/>
+        <arg name="gui" value="$(arg gui)"/>
+        <arg name="headless" value="false"/>
+        <arg name="debug" value="false"/>
+    </include>
+
+    <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model" args="-urdf -model servingbot -x $(arg x_pos) -y $(arg y_pos) -z $(arg z_pos) -R $(arg roll) -P $(arg pitch) -Y $(arg yaw) -param robot_description" />
+
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher">
+        <param name="publish_frequency" type="double" value="50.0" />
+    </node>
+
+
+    <!--  ************** Map **************  -->
+    <node name="map_server" pkg="map_server" type="map_server" args="$(find tube_mpc_ros)/map/sq_world.yaml" output="screen">
+        <param name="frame_id" value="map"/>
+    </node>
+
+
+    <!--  ************** Localization **************  -->
+
+    <node pkg="amcl" type="amcl" name="amcl" output="screen">
+        <rosparam file="$(find tube_mpc_ros)/params/amcl_params.yaml" command="load" />
+        <param name="initial_pose_x"            value="$(arg x_pos)"/>
+        <param name="initial_pose_y"            value="$(arg y_pos)"/>
+        <param name="initial_pose_a"            value="$(arg yaw)"/>
+    </node>
+
+    <!--  ************** Navigation ***************  -->
+    <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+        <rosparam file="$(find tube_mpc_ros)/params/costmap_common_params.yaml" command="load" ns="global_costmap" />
+        <rosparam file="$(find tube_mpc_ros)/params/costmap_common_params.yaml" command="load" ns="local_costmap" />
+        <rosparam file="$(find tube_mpc_ros)/params/local_costmap_params.yaml" command="load" />
+        <rosparam file="$(find tube_mpc_ros)/params/global_costmap_params.yaml" command="load" />
+
+        <!-- Global Planner -->
+        <param name="base_global_planner" value="global_planner/GlobalPlanner" />
+        <param name="planner_frequency" value="1.0" />
+        <param name="planner_patience" value="5.0" />
+        <rosparam file="$(find tube_mpc_ros)/params/global_planner_params.yaml" command="load" />
+
+        <!-- Local Planner -->
+        <param name="base_local_planner" value="base_local_planner/TrajectoryPlannerROS"  if="$(eval controller == 'mpc')"/>
+        <param name="base_local_planner" value="dwa_local_planner/DWAPlannerROS"  if="$(eval controller == 'dwa')"/>
+
+        <!-- external controller -->
+        <remap from="/cmd_vel" to="/fake_cmd" unless="$(eval controller == 'tube_mpc')"/>
+    </node>
+
+    <!--  ************** Tube MPC Node **************  -->
+    <node name="TubeMPC_Node" pkg="tube_mpc_ros" type="tube_TubeMPC_Node" output="screen" if="$(eval controller == 'tube_mpc')" >
+        <rosparam file="$(find tube_mpc_ros)/params/tube_mpc_params.yaml" command="load" />
+
+        <!-- STL integration parameters -->
+        <param name="enable_stl_constraints" value="$(arg enable_stl)" if="$(eval enable_stl)"/>
+        <param name="stl_config_file" value="$(arg stl_config)" if="$(eval enable_stl)"/>
+
+        <!-- STL topic remapping for integration with Tube MPC -->
+        <remap from="/stl_robustness" to="/tube_mpc/stl_robustness" if="$(eval enable_stl)"/>
+        <remap from="/stl_constraint_violation" to="/tube_mpc/stl_constraint_violation" if="$(eval enable_stl)"/>
+    </node>
+
+    <!--  ************** MPC Node (for comparison) **************  -->
+    <node name="nav_mpc" pkg="tube_mpc_ros" type="tube_nav_mpc" output="screen" if="$(eval controller == 'mpc')" >
+        <rosparam file="$(find tube_mpc_ros)/params/mpc_last_params.yaml" command="load" />
+    </node>
+
+    <!--  ************** DWA Local Planner **************  -->
+    <node name="DWAPlannerROS" pkg="dwa_local_planner" type="DWAPlannerROS" output="screen" if="$(eval controller == 'dwa')" >
+        <rosparam file="$(find tube_mpc_ros)/params/dwa_local_planner_params.yaml" command="load" />
+    </node>
+
+    <!--  ************** Pure Pursuit **************  -->
+    <node name="Pure_Pursuit" pkg="tube_mpc_ros" type="tube_Pure_Pursuit" output="screen" if="$(eval controller == 'pure_pursuit')" >
+        <rosparam file="$(find tube_mpc_ros)/params/pure_pursuit_params.yaml" command="load" />
+        <remap from="/pure_pursuit/odom" to="/odom" />
+        <remap from="/pure_pursuit/global_planner" to="/move_base/GlobalPlanner/plan" />
+        <remap from="/pure_pursuit/goal" to="/move_base_simple/goal" />
+        <remap from="/pure_pursuit/cmd_vel" to="/cmd_vel" />
+    </node>
+
+    <!--  ************** STL Monitoring System **************  -->
+    <!-- NOTE: These nodes require STL_ros package to be properly built -->
+
+    <group if="$(arg enable_stl)">
+        <!-- STL Monitor Node -->
+        <!-- Monitors robot state and evaluates STL specifications -->
+        <node name="stl_monitor" pkg="stl_ros" type="stl_monitor.py" output="screen" respawn="false">
+            <param name="stl_spec_file" value="$(arg stl_config)" if="$(eval enable_stl)"/>
+
+            <!-- Input topics -->
+            <remap from="/robot_pose" to="/amcl_pose"/>
+            <remap from="/robot_goal" to="/move_base/goal"/>
+            <remap from="/robot_trajectory" to="/move_base/GlobalPlanner/plan"/>
+
+            <!-- Output topics -->
+            <remap from="/stl_robustness" to="/stl/robustness"/>
+            <remap from="/stl_violation" to="/stl/violation"/>
+            <remap from="/stl_budget" to="/stl/budget"/>
+
+            <!-- Optional: belief space integration -->
+            <param name="use_belief_space" value="true"/>
+            <param name="belief_uncertainty_threshold" value="0.1"/>
+        </node>
+
+        <!-- STL Visualizer Node -->
+        <!-- Visualizes STL robustness, constraints, and violations in RViz -->
+        <node name="stl_visualizer" pkg="stl_ros" type="stl_visualizer.py" output="screen" respawn="false">
+            <remap from="/stl_robustness" to="/stl/robustness"/>
+            <remap from="/stl_violation" to="/stl/violation"/>
+            <remap from="/stl_budget" to="/stl/budget"/>
+
+            <!-- Visualization parameters -->
+            <param name="visualization_frame" value="map"/>
+            <param name="robustness_marker_scale" value="0.5"/>
+            <param name="violation_marker_color_r" value="1.0"/>
+            <param name="violation_marker_color_g" value="0.0"/>
+            <param name="violation_marker_color_b" value="0.0"/>
+        </node>
+    </group>
+
+    <!--  ************** Auto Navigation Goal **************  -->
+    <node name="auto_nav_goal" pkg="tube_mpc_ros" type="auto_nav_goal.py" output="screen" launch-prefix="bash -c 'sleep 5; $0 $@'">
+        <param name="goal_x" value="3.0"/>
+        <param name="goal_y" value="-7.0"/>
+        <param name="goal_yaw" value="0.0"/>
+    </node>
+
+    <!--  ************** Visualization **************  -->
+    <!-- RViz configuration with STL visualization markers -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find tube_mpc_ros)/params/stl_rviz_navigation.rviz" if="$(arg enable_stl)"/>
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find tube_mpc_ros)/params/total_rviz_navigation.rviz" unless="$(arg enable_stl)"/>
+
+    <!--  ************** STL Data Logging (Optional) **************  -->
+    <node name="stl_data_logger" pkg="rosbag" type="record" output="screen" if="$(arg enable_stl)"
+          args="-o $(env HOME)/stl_mpc_data.bag
+                /stl/robustness /stl/violation /stl/budget
+                /tube_mpc/stl_robustness /tube_mpc/stl_constraint_violation
+                /amcl_pose /move_base/goal /cmd_vel">
+    </node>
+
+</launch>
