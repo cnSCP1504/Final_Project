@@ -1,0 +1,67 @@
+# STL Monitor Parameters
+# Configuration for Signal Temporal Logic monitoring and evaluation
+
+# STL Formula Specification
+stl_formula:
+  # Formula type: "reachability", "safety", "sequence"
+  type: "reachability"
+  description: "Eventually reach goal within time horizon"
+
+  # Temporal bounds
+  time_horizon: 20.0  # seconds
+  lower_bound: 0.0
+  upper_bound: 20.0
+
+# Robustness Computation
+robustness:
+  # Smooth approximation parameters
+  smooth_approximation: true
+  temperature: 0.1  # τ: lower = more accurate, higher = smoother
+
+  # Threshold for predicates
+  reachability_threshold: 0.5  # meters
+  safety_threshold: 0.3  # meters
+
+# Belief Space Integration
+belief_space:
+  enabled: false  # Set to true for partial observability
+  num_particles: 100
+  uncertainty_threshold: 0.1
+  uncertainty_penalty: 0.5
+
+  # Prediction parameters
+  prediction_horizon: 2.0  # seconds
+  prediction_dt: 0.1  # time step
+
+# Robustness Budget
+budget:
+  enabled: true
+  initial_value: 1.0
+  baseline_requirement: 0.1  # r̲: per-step robustness requirement
+  decay_rate: 0.0  # Optional budget decay
+  violation_threshold: 0.0
+
+# Monitoring
+monitoring:
+  update_frequency: 10.0  # Hz
+  window_size: 20  # steps
+  violation_recovery: true
+
+# Data Logging
+logging:
+  enabled: true
+  log_file: "/tmp/stl_monitor_data.csv"
+  log_frequency: 10.0  # Log every N evaluations
+
+# MPC Integration
+integration:
+  constraint_mode: "soft"  # "hard", "soft", "penalty"
+  penalty_weight: 100.0
+  min_robustness_threshold: 0.0
+
+# Visualization
+visualization:
+  publish_robustness: true
+  publish_boundaries: true
+  marker_scale: 0.5
+  marker_lifetime: 0.5

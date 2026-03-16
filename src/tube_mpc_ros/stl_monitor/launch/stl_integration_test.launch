@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+     STL Monitor Integration Test Launch File
+     Tests STL monitoring with simulated robot navigation
+  -->
+
+  <arg name="use_sim_time" default="false"/>
+  <arg name="verbose" default="true"/>
+
+  <!-- STL Monitor Node -->
+  <node name="stl_monitor" pkg="stl_monitor" type="stl_monitor_node.py" output="screen">
+    <param name="use_belief_space" value="false"/>
+    <param name="temperature" value="0.1"/>
+    <param name="reachability_threshold" value="0.5"/>
+    <param name="baseline_requirement" value="0.1"/>
+    <param name="update_frequency" value="10.0"/>
+    <param name="log_enabled" value="true"/>
+    <param name="log_file" value="/tmp/stl_test_data.csv"/>
+  </node>
+
+  <!-- Test Pose Publisher -->
+  <node name="test_pose_publisher" pkg="rostopic" type="rostopic"
+        args="pub /amcl_pose geometry_msgs/PoseWithCovarianceStamped
+              '{header: {frame_id: 'map'}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}}}}'
+              -r 10" if="$(arg use_sim_time)"/>
+
+  <!-- Test Path Publisher -->
+  <node name="test_path_publisher" pkg="rostopic" type="rostopic"
+        args="pub /move_base/GlobalPlanner/plan nav_msgs/Path
+              '{header: {frame_id: 'map'}, poses: [{pose: {position: {x: 2.0, y: 0.0, z: 0.0}}}]}'
+              -r 1" if="$(arg use_sim_time)"/>
+
+  <!-- RViz for visualization -->
+  <arg name="rviz" default="false"/>
+  <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz"
+        args="-d $(find stl_monitor)/cfg/stl_monitor.rviz"/>
+
+</launch>
