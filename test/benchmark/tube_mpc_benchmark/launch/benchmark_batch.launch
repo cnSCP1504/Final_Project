@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Arguments -->
+  <arg name="num_tests" default="100" doc="Number of tests to run"/>
+  <arg name="map_size" default="20.0" doc="Map size in meters (square)"/>
+  <arg name="min_goal_distance" default="5.0" doc="Minimum goal distance"/>
+  <arg name="max_goal_distance" default="15.0" doc="Maximum goal distance"/>
+  <arg name="goal_tolerance" default="0.3" doc="Goal tolerance in meters"/>
+  <arg name="timeout" default="60.0" doc="Timeout per test in seconds"/>
+  <arg name="controller" default="tube_mpc" doc="Controller type (tube_mpc, mpc, dwa, pure_pursuit)"/>
+  <arg name="output_dir" default="/tmp/tube_mpc_benchmark" doc="Output directory for results"/>
+  <arg name="rviz" default="false" doc="Show RViz visualization"/>
+
+  <!-- Parameters -->
+  <param name="/use_sim_time" value="true"/>
+
+  <!-- Map Server (Empty map) -->
+  <node name="map_server" pkg="map_server" type="map_server" args="$(find tube_mpc_benchmark)/configs/empty_map.yaml">
+    <param name="frame_id" value="map"/>
+  </node>
+
+  <!-- AMCL (Localization) - Basic configuration -->
+  <node pkg="amcl" type="amcl" name="amcl" output="screen">
+    <param name="use_map_topic" value="true"/>
+    <param name="odom_frame_id" value="odom"/>
+    <param name="base_frame_id" value="base_link"/>
+    <param name="global_frame_id" value="map"/>
+    <param name="update_frequency" value="5.0"/>
+    <param name="transform_tolerance" value="0.2"/>
+  </node>
+
+  <!-- Static TF (map to odom) - Simple setup for testing -->
+  <node pkg="tf" type="static_transform_publisher" name="map_odom_broadcaster"
+        args="0 0 0 0 0 0 map odom 100"/>
+
+  <!-- Kinematic Robot Simulator -->
+  <node name="kinematic_robot_sim" pkg="tube_mpc_benchmark" type="kinematic_robot_sim.py" output="screen">
+    <param name="update_rate" value="50.0"/>
+    <param name="initial_x" value="0.0"/>
+    <param name="initial_y" value="0.0"/>
+    <param name="initial_theta" value="0.0"/>
+    <param name="robot_radius" value="0.2"/>
+    <param name="odom_noise_linear" value="0.001"/>
+    <param name="odom_noise_angular" value="0.001"/>
+  </node>
+
+  <!-- Benchmark Runner -->
+  <node name="benchmark_runner" pkg="tube_mpc_benchmark" type="benchmark_runner.py" output="screen">
+    <param name="num_tests" value="$(arg num_tests)"/>
+    <param name="map_size" value="$(arg map_size)"/>
+    <param name="min_goal_distance" value="$(arg min_goal_distance)"/>
+    <param name="max_goal_distance" value="$(arg max_goal_distance)"/>
+    <param name="goal_tolerance" value="$(arg goal_tolerance)"/>
+    <param name="timeout" value="$(arg timeout)"/>
+    <param name="output_dir" value="$(arg output_dir)"/>
+  </node>
+
+  <!-- RViz (optional) -->
+  <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz" args="-d $(find tube_mpc_benchmark)/launch/benchmark.rviz"/>
+
+</launch>

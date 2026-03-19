@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Working test with proper activation -->
+
+  <!-- Map Server -->
+  <node name="map_server" pkg="map_server" type="map_server" args="$(find tube_mpc_benchmark)/configs/empty_map.yaml">
+    <param name="frame_id" value="map"/>
+  </node>
+
+  <!-- Static TF -->
+  <node pkg="tf" type="static_transform_publisher" name="map_odom"
+        args="0 0 0 0 0 0 map odom 100"/>
+  <node pkg="tf" type="static_transform_publisher" name="odom_base_link"
+        args="0 0 0 0 0 0 odom base_link 100"/>
+
+  <!-- Kinematic Robot Simulator -->
+  <node name="kinematic_robot_sim" pkg="tube_mpc_benchmark" type="kinematic_robot_sim.py" output="screen">
+    <param name="update_rate" value="50.0"/>
+    <param name="initial_x" value="0.0"/>
+    <param name="initial_y" value="0.0"/>
+    <param name="initial_theta" value="0.0"/>
+    <param name="robot_radius" value="0.2"/>
+  </node>
+
+  <!-- Test Activation -->
+  <node name="test_activator" pkg="tube_mpc_benchmark" type="activate_test.py"
+        launch-prefix="bash -c 'sleep 2; $0 $@'"/>
+
+  <!-- Simple velocity publisher -->
+  <node name="velocity_pub" pkg="rospy" type="rospy_talker"
+        args="/cmd_vel geometry_msgs/Twist '{linear: {x: 0.3, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}'"
+        launch-prefix="bash -c 'sleep 3; $0 $@'" output="screen"/>
+
+</launch>

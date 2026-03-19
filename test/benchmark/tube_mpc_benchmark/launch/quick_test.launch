@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Quick single test with visualization -->
+  <arg name="controller" default="tube_mpc" doc="Controller type"/>
+  <arg name="start_x" default="0.0"/>
+  <arg name="start_y" default="0.0"/>
+  <arg name="start_theta" default="0.0"/>
+  <arg name="goal_x" default="5.0"/>
+  <arg name="goal_y" default="5.0"/>
+
+  <!-- Map Server -->
+  <node name="map_server" pkg="map_server" type="map_server" args="$(find tube_mpc_benchmark)/configs/empty_map.yaml"/>
+
+  <!-- AMCL -->
+  <include file="$(find tube_mpc_ros)/launch/include/amcl.launch.xml">
+    <arg name="scan_topic" value="scan"/>
+  </include>
+
+  <!-- Move Base -->
+  <include file="$(find tube_mpc_ros)/launch/move_base.launch">
+    <arg name="controller" value="$(arg controller)"/>
+  </include>
+
+  <!-- Simulator -->
+  <node name="kinematic_robot_sim" pkg="tube_mpc_benchmark" type="kinematic_robot_sim.py" output="screen">
+    <param name="initial_x" value="$(arg start_x)"/>
+    <param name="initial_y" value="$(arg start_y)"/>
+    <param name="initial_theta" value="$(arg start_theta)"/>
+  </node>
+
+  <!-- RViz -->
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find tube_mpc_benchmark)/launch/benchmark.rviz"/>
+
+  <!-- Simple goal publisher -->
+  <node name="simple_goal_publisher" pkg="tube_mpc_benchmark" type="simple_goal_publisher.py" args="$(arg goal_x) $(arg goal_y)"/>
+
+</launch>

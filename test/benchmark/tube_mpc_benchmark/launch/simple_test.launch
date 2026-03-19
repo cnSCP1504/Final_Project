@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Simple test without move_base - just simulator and goal publisher -->
+
+  <arg name="test_duration" default="20.0"/>
+
+  <!-- Map Server -->
+  <node name="map_server" pkg="map_server" type="map_server" args="$(find tube_mpc_benchmark)/configs/empty_map.yaml">
+    <param name="frame_id" value="map"/>
+  </node>
+
+  <!-- Static TF -->
+  <node pkg="tf" type="static_transform_publisher" name="map_odom"
+        args="0 0 0 0 0 0 map odom 100"/>
+  <node pkg="tf" type="static_transform_publisher" name="odom_base_link"
+        args="0 0 0 0 0 0 odom base_link 100"/>
+
+  <!-- Kinematic Robot Simulator -->
+  <node name="kinematic_robot_sim" pkg="tube_mpc_benchmark" type="kinematic_robot_sim.py" output="screen">
+    <param name="update_rate" value="50.0"/>
+    <param name="initial_x" value="0.0"/>
+    <param name="initial_y" value="0.0"/>
+    <param name="initial_theta" value="0.0"/>
+    <param name="robot_radius" value="0.2"/>
+  </node>
+
+  <!-- Test Activation - Send start command -->
+  <node pkg="rostopic" type="rostopic" name="test_activator"
+        args="pub /test_control std_msgs/Float64MultiArray '{data: [1.0]}' -1"
+        launch-prefix="bash -c 'sleep 2; $0 $@'"/>
+
+  <!-- Test Controller - Simple velocity command publisher -->
+  <node pkg="rostopic" type="rostopic" name="velocity_tester"
+        args="pub /cmd_vel geometry_msgs/Twist '{linear: {x: 0.3, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}' -r 10"
+        launch-prefix="bash -c 'sleep 3; $0 $@'"/>
+
+  <!-- Monitor - Check odometry -->
+  <node pkg="rostopic" type="rostopic" name="odom_monitor"
+        args="echo /odom -n 100"/>
+
+</launch>

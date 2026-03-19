@@ -1,0 +1,90 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Tube MPC Navigation Test with Full Visualization -->
+
+  <arg name="goal_x" default="5.0"/>
+  <arg name="goal_y" default="5.0"/>
+  <arg name="enable_recorder" default="true"/>
+  <arg name="enable_visualizer" default="false"/>
+
+  <!-- Use system time (not simulation time) -->
+  <param name="/use_sim_time" value="false"/>
+
+  <!-- Map Server -->
+  <node name="map_server" pkg="map_server" type="map_server"
+        args="$(find tube_mpc_benchmark)/configs/empty_map.yaml">
+    <param name="frame_id" value="map"/>
+  </node>
+
+  <!-- Static TF -->
+  <node pkg="tf" type="static_transform_publisher" name="map_odom"
+        args="0 0 0 0 0 0 map odom 100"/>
+
+  <!-- Kinematic Robot Simulator -->
+  <node name="kinematic_robot_sim" pkg="tube_mpc_benchmark" type="kinematic_robot_sim.py" output="screen">
+    <param name="update_rate" value="50.0"/>
+    <param name="initial_x" value="0.0"/>
+    <param name="initial_y" value="0.0"/>
+    <param name="initial_theta" value="0.0"/>
+    <param name="robot_radius" value="0.2"/>
+    <param name="odom_noise_linear" value="0.001"/>
+    <param name="odom_noise_angular" value="0.001"/>
+  </node>
+
+  <!-- AMCL Localization -->
+  <node pkg="amcl" type="amcl" name="amcl" output="screen">
+    <param name="use_map_topic" value="true"/>
+    <param name="odom_frame_id" value="odom"/>
+    <param name="base_frame_id" value="base_link"/>
+    <param name="global_frame_id" value="map"/>
+    <param name="update_frequency" value="5.0"/>
+    <param name="transform_tolerance" value="0.2"/>
+    <param name="initial_pose_x" value="0.0"/>
+    <param name="initial_pose_y" value="0.0"/>
+    <param name="initial_pose_a" value="0.0"/>
+  </node>
+
+  <!-- Move Base -->
+  <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+    <rosparam file="$(find tube_mpc_ros)/params/costmap_common_params.yaml" command="load" ns="global_costmap" />
+    <rosparam file="$(find tube_mpc_ros)/params/costmap_common_params.yaml" command="load" ns="local_costmap" />
+    <rosparam file="$(find tube_mpc_ros)/params/local_costmap_params.yaml" command="load" />
+    <rosparam file="$(find tube_mpc_ros)/params/global_costmap_params.yaml" command="load" />
+
+    <param name="base_global_planner" value="global_planner/GlobalPlanner" />
+    <param name="planner_frequency" value="1.0" />
+    <param name="planner_patience" value="5.0" />
+    <rosparam file="$(find tube_mpc_ros)/params/global_planner_params.yaml" command="load" />
+
+    <param name="base_local_planner" value="base_local_planner/TrajectoryPlannerROS"/>
+  </node>
+
+  <!-- Tube MPC Node -->
+  <node name="TubeMPC_Node" pkg="tube_mpc_ros" type="tube_TubeMPC_Node" output="screen">
+    <rosparam file="$(find tube_mpc_ros)/params/tube_mpc_params.yaml" command="load" />
+  </node>
+
+  <!-- Test Activator -->
+  <node name="test_activator" pkg="tube_mpc_benchmark" type="activate_test.py"
+        launch-prefix="bash -c 'sleep 3; $0 $@'"/>
+
+  <!-- Navigation Goal Publisher -->
+  <node name="nav_goal_publisher" pkg="tube_mpc_benchmark" type="simple_goal_publisher.py"
+        args="$(arg goal_x) $(arg goal_y) 0.0"
+        launch-prefix="bash -c 'sleep 5; $0 $@'" output="screen"/>
+
+  <!-- Data Recorder -->
+  <node if="$(arg enable_recorder)" name="data_recorder" pkg="tube_mpc_benchmark" type="data_recorder.py" output="screen">
+    <param name="output_dir" value="/tmp/tube_mpc_data"/>
+    <param name="record_rate" value="10.0"/>
+  </node>
+
+  <!-- Real-time Visualizer (optional, requires display) -->
+  <node if="$(arg enable_visualizer)" name="realtime_visualizer" pkg="tube_mpc_benchmark" type="realtime_visualizer.py"
+        launch-prefix="bash -c 'sleep 2; $0 $@'" output="screen"/>
+
+  <!-- RViz -->
+  <node name="rviz" pkg="rviz" type="rviz"
+        args="-d $(find tube_mpc_benchmark)/launch/tube_mpc_visualization.rviz"/>
+
+</launch>

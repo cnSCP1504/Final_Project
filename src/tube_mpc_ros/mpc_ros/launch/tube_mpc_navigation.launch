@@ -2,9 +2,10 @@
 
     <!--  ************** Global Parameters ***************  -->
     <param name="use_sim_time" value="true"/>
-    <arg name="controller"  default="tube_mpc" doc="opt: tube_mpc, mpc, dwa, pure_pursuit"/> 
-    <arg name="model"  default="serving_bot" doc="opt: serving_bot"/> 
-    <arg name="tf_prefix"  default=""/> 
+    <arg name="controller"  default="tube_mpc" doc="opt: tube_mpc, mpc, dwa, pure_pursuit"/>
+    <arg name="model"  default="serving_bot" doc="opt: serving_bot"/>
+    <arg name="tf_prefix"  default=""/>
+    <arg name="rviz_config"  default="$(find tube_mpc_ros)/params/tube_mpc_navigation.rviz" doc="Path to RViz config file"/> 
 
     <!--  ************** GAZEBO Simulator ***************  -->
     <arg name="x_pos" default="0.0"/>
@@ -102,5 +103,5 @@
     </node>
 
     <!--  ************** Visualization **************  -->
-    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find tube_mpc_ros)/params/total_rviz_navigation.rviz"/>
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(arg rviz_config)"/>
 </launch>
