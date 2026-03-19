@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Test launch file for DR Tightening formulas -->
+  <arg name="verbose" default="true"/>
+
+  <!-- Load parameters -->
+  <rosparam file="$(find dr_tightening)/params/dr_tightening_params.yaml" command="load"/>
+
+  <!-- Run test executable -->
+  <node name="test_dr_formulas" pkg="dr_tightening" type="dr_tightening_test" output="screen">
+    <param name="verbose" value="$(arg verbose)"/>
+  </node>
+</launch>
