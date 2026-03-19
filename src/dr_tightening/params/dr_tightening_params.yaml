@@ -1,31 +1,37 @@
 # DR Tightening Parameters
-# Based on manuscript Section III: Distributionally Robust Chance Constraints
+# Based on Lemma 4.1 (Manuscript Eq. 698)
 
-# Residual collection
-residual_window_size: 200        # M: sliding window size (manuscript recommendation)
-residual_dimension: 3            # Dimension of disturbance ω
+# Residual Collection
+dr_tightening_node:
+  sliding_window_size: 200          # M: Window size for residuals (default 200)
+  min_residuals_for_update: 50      # Minimum samples before computing margins
 
-# Risk parameters
-total_risk_delta: 0.1            # Overall risk level δ (10% violation probability)
-mpc_horizon: 20                  # Prediction horizon N
+# Risk Parameters
+  risk_level: 0.1                   # δ: Total violation probability (0.05-0.2)
+  risk_allocation: "uniform"        # Strategy: "uniform" or "deadline_weighted"
+  confidence_level: 0.95            # Confidence for ambiguity set
 
-# Risk allocation strategy
-# Options: "uniform", "deadline_weighted", "inverse_square"
-risk_allocation_strategy: "uniform"
+# Tube MPC Parameters
+  tube_radius: 0.5                  # ē: Tube radius (from Tube MPC)
+  lipschitz_constant: 1.0           # L_h: Safety function Lipschitz constant
 
-# Ambiguity set calibration
-ambiguity_strategy: "wasserstein_ball"  # or "empirical_gaussian"
-confidence_level: 0.95                   # 1-α for coverage guarantee
+# Safety Function Parameters
+  safety_buffer: 1.0                # Safety buffer for obstacle avoidance
+  obstacle_influence_radius: 5.0    # Radius for obstacle influence
 
-# Tube parameters
-tube_radius: 0.5                  # ē: tube error bound
-lipschitz_constant: 1.0          # L_h: for safety function
+# DR Tightening Options
+  ambiguity_strategy: "chebyshev"   # "chebyshev" or "wasserstein_ball"
+  cantelli_enabled: true            # Use Cantelli (one-sided Chebyshev) bound
 
-# Safety function parameters
-obstacle_position: [5.0, 5.0]    # Obstacle location
-safety_buffer: 1.0               # Buffer zone around obstacles
+# Update Rate
+  update_rate: 10.0                 # DR margin update rate (Hz)
 
-# Testing
-enable_verbose_output: true
-log_margins_to_csv: true
-csv_output_path: "/tmp/dr_margins.csv"
+# Output Options
+  enable_visualization: true        # Publish RViz markers
+  enable_debug_output: false        # Verbose console logging
+  log_to_csv: false                 # Log margins to CSV file
+  csv_output_path: "/tmp/dr_margins.csv"
+
+# Risk Allocation Options (if deadline_weighted)
+  deadline_horizon: 20              # N: MPC horizon for deadline-weighted allocation
+  deadline_weight: 1.0              # Weight for deadline steps

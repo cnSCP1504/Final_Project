@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- DR Tightening Node Launch File -->
+
+  <arg name="dr_visualization" default="true" doc="Enable DR margin visualization"/>
+  <arg name="debug_output" default="false" doc="Enable debug output"/>
+  <arg name="log_to_csv" default="false" doc="Log margins to CSV file"/>
+  <arg name="csv_output_path" default="/tmp/dr_margins.csv" doc="CSV output path"/>
+
+  <!-- Load parameters -->
+  <rosparam file="$(find dr_tightening)/params/dr_tightening_params.yaml" command="load"/>
+
+  <!-- Override with launch arguments if provided -->
+  <param name="enable_visualization" value="$(arg dr_visualization)"/>
+  <param name="enable_debug_output" value="$(arg debug_output)"/>
+  <param name="log_to_csv" value="$(arg log_to_csv)"/>
+  <param name="csv_output_path" value="$(arg csv_output_path)"/>
+
+  <!-- DR Tightening Node -->
+  <node name="dr_tightening_node" pkg="dr_tightening" type="dr_tightening_node" output="screen">
+    <!-- Remap topics if needed -->
+    <!-- <remap from="/tube_mpc/tracking_error" to="/custom_tracking_error"/> -->
+  </node>
+
+  <!-- Optional: Visualization for DR margins -->
+  <group if="$(arg dr_visualization)">
+    <node name="rviz_dr" pkg="rviz" type="rviz" args="-d $(find dr_tightening)/launch/dr_visualization.rviz" required="false"/>
+  </group>
+
+</launch>

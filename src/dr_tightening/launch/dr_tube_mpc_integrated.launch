@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Integrated Tube MPC + DR Tightening Launch File -->
+
+  <arg name="controller" default="tube_mpc" doc="Controller type"/>
+  <arg name="rviz_config" default="$(find tube_mpc_ros)/params/tube_mpc_navigation.rviz" doc="RViz config"/>
+  <arg name="enable_dr" default="true" doc="Enable DR tightening"/>
+  <arg name="dr_debug" default="false" doc="DR debug output"/>
+
+  <!-- Start Tube MPC Navigation -->
+  <include file="$(find tube_mpc_ros)/launch/tube_mpc_navigation.launch">
+    <arg name="controller" value="$(arg controller)"/>
+    <arg name="rviz_config" value="$(arg rviz_config)"/>
+  </include>
+
+  <!-- Start DR Tightening (if enabled) -->
+  <group if="$(arg enable_dr)">
+    <include file="$(find dr_tightening)/launch/dr_tightening.launch">
+      <arg name="dr_visualization" value="false"/>  <!-- Disabled: Use main RViz instead -->
+      <arg name="debug_output" value="$(arg dr_debug)"/>
+    </include>
+  </group>
+
+  <!-- Information: Integration details -->
+  <group if="$(arg enable_dr)">
+    <node pkg="rostopic" type="rostopic" name="topic_relay_dr" args="echo">
+      <remap from="/output" to="/dr_integrated_info"/>
+    </node>
+  </group>
+
+</launch>

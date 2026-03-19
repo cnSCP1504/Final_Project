@@ -13,6 +13,7 @@
 #include <nav_msgs/Path.h>
 #include <nav_msgs/Odometry.h>
 #include <visualization_msgs/Marker.h>
+#include <std_msgs/Float64MultiArray.h>
 #include <fstream>
 
 #include "TubeMPC.h"
@@ -34,6 +35,7 @@ class TubeMPCNode
         ros::NodeHandle _nh;
         ros::Subscriber _sub_odom, _sub_path, _sub_goal, _sub_amcl;
         ros::Publisher _pub_globalpath, _pub_odompath, _pub_twist, _pub_mpctraj, _pub_tube;
+        ros::Publisher _pub_tracking_error;  // DR Tightening: publish tracking error/residuals
         ros::Timer _timer1;
         tf::TransformListener _tf_listener;
         ros::Time tracking_stime;

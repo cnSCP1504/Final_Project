@@ -39,6 +39,29 @@ target_link_libraries(${PROJECT_NAME}
   ${catkin_LIBRARIES}
 )
 
+## ROS Node
+add_executable(dr_tightening_node
+  src/dr_tightening_node_main.cpp
+  src/dr_tightening_node.cpp
+)
+
+target_link_libraries(dr_tightening_node
+  ${PROJECT_NAME}
+  ${catkin_LIBRARIES}
+  ${catkin_LIBRARIES}
+)
+
+## Add tf2 dependency for node
+find_package(tf2 REQUIRED)
+
+target_include_directories(dr_tightening_node PRIVATE
+  ${tf2_INCLUDE_DIRS}
+)
+
+target_link_libraries(dr_tightening_node
+  ${tf2_LIBRARIES}
+)
+
 ## Test executables
 add_executable(dr_tightening_test
   test/test_dr_formulas.cpp

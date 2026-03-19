@@ -62,7 +62,8 @@ TubeMPCNode::TubeMPCNode()
     _pub_odompath  = _nh.advertise<nav_msgs::Path>("/mpc_reference", 1);
     _pub_mpctraj   = _nh.advertise<nav_msgs::Path>("/mpc_trajectory", 1);
     _pub_tube     = _nh.advertise<nav_msgs::Path>("/tube_boundaries", 1);
-    
+    _pub_tracking_error = _nh.advertise<std_msgs::Float64MultiArray>("/tube_mpc/tracking_error", 1);  // DR Tightening
+
     if(_pub_twist_flag)
         _pub_twist = _nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
 
@@ -160,20 +161,61 @@ void TubeMPCNode::odomCB(const nav_msgs::Odometry::ConstPtr& odomMsg)
 void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
 {
     if(_goal_received && !_goal_reached)
-    {    
+    {
         nav_msgs::Path odom_path = nav_msgs::Path();
+
+        // TF变换时序修复：等待TF可用
+        bool tf_available = false;
+        int tf_retry_count = 0;
+        const int max_tf_retries = 5;
+
+        while (!tf_available && tf_retry_count < max_tf_retries)
+        {
+            try
+            {
+                // 检查TF是否可用
+                if (!_tf_listener.canTransform(_odom_frame, _map_frame, ros::Time(0)))
+                {
+                    ROS_WARN("Waiting for transform from %s to %s... (attempt %d/%d)",
+                             _map_frame.c_str(), _odom_frame.c_str(),
+                             tf_retry_count + 1, max_tf_retries);
+
+                    // 等待TF变得可用
+                    _tf_listener.waitForTransform(_odom_frame, _map_frame,
+                                                   ros::Time(0), ros::Duration(2.0));
+                }
+                tf_available = true;
+            }
+            catch (tf::TransformException &ex)
+            {
+                tf_retry_count++;
+                if (tf_retry_count < max_tf_retries)
+                {
+                    ROS_WARN("TF lookup failed, retrying... (%d/%d): %s",
+                             tf_retry_count, max_tf_retries, ex.what());
+                    ros::Duration(1.0).sleep();
+                }
+                else
+                {
+                    ROS_ERROR("TF transform failed after %d attempts: %s",
+                              max_tf_retries, ex.what());
+                    return;  // 放弃本次路径更新
+                }
+            }
+        }
+
         try
         {
             double total_length = 0.0;
             int sampling = _downSampling;
 
             if(_waypointsDist <=0.0)
-            {        
+            {
                 double dx = pathMsg->poses[1].pose.position.x - pathMsg->poses[0].pose.position.x;
                 double dy = pathMsg->poses[1].pose.position.y - pathMsg->poses[0].pose.position.y;
                 _waypointsDist = sqrt(dx*dx + dy*dy);
                 _downSampling = int(_pathLength/10.0/_waypointsDist);
-            }            
+            }
 
             for(int i =0; i< pathMsg->poses.size(); i++)
             {
@@ -181,16 +223,16 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
                     break;
 
                 if(sampling == _downSampling)
-                {   
+                {
                     geometry_msgs::PoseStamped tempPose;
-                    _tf_listener.transformPose(_odom_frame, ros::Time(0) , pathMsg->poses[i], _map_frame, tempPose);                     
-                    odom_path.poses.push_back(tempPose);  
+                    _tf_listener.transformPose(_odom_frame, ros::Time(0) , pathMsg->poses[i], _map_frame, tempPose);
+                    odom_path.poses.push_back(tempPose);
                     sampling = 0;
                 }
-                total_length = total_length + _waypointsDist; 
-                sampling = sampling + 1;  
+                total_length = total_length + _waypointsDist;
+                sampling = sampling + 1;
             }
-           
+
             if(odom_path.poses.size() >= 2 )  // 降低要求：至少2个点（原来是6）
             {
                 _odom_path = odom_path;
@@ -198,17 +240,22 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
                 odom_path.header.frame_id = _odom_frame;
                 odom_path.header.stamp = ros::Time::now();
                 _pub_odompath.publish(odom_path);
+
+                ROS_INFO("Path transformation successful: %d points transformed from %s to %s",
+                         (int)odom_path.poses.size(), _map_frame.c_str(), _odom_frame.c_str());
             }
             else
             {
                 cout << "Failed to path generation: only " << odom_path.poses.size() << " points" << endl;
                 _waypointsDist = -1;
+                _path_computed = false;
             }
         }
         catch(tf::TransformException &ex)
         {
-            ROS_ERROR("%s",ex.what());
-            ros::Duration(1.0).sleep();
+            ROS_ERROR("Transform failed during path processing: %s", ex.what());
+            _path_computed = false;
+            _waypointsDist = -1;
         }
     }
 }
@@ -530,10 +577,19 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
             tempPose.pose.orientation.z = myQuaternion[2];
             tempPose.pose.orientation.w = myQuaternion[3];
                 
-            _mpc_traj.poses.push_back(tempPose); 
-        }     
+            _mpc_traj.poses.push_back(tempPose);
+        }
         _pub_mpctraj.publish(_mpc_traj);
-        
+
+        // DR Tightening: Publish tracking error for DR constraint tightening
+        std_msgs::Float64MultiArray tracking_error_msg;
+        tracking_error_msg.data.clear();
+        tracking_error_msg.data.push_back(cte);           // Cross-track error
+        tracking_error_msg.data.push_back(etheta);         // Heading error
+        tracking_error_msg.data.push_back(_e_current.norm());  // Error norm
+        tracking_error_msg.data.push_back(_tube_mpc.getTubeRadius());  // Current tube radius
+        _pub_tracking_error.publish(tracking_error_msg);
+
         visualizeTube();
     }
     else
