@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Safe-Regret MPC Reference Planner Launch File -->
+
+  <arg name="no_regret_algorithm" default="omd" doc="No-regret algorithm: omd, ftrl, mw"/>
+  <arg name="planning_horizon" default="20" doc="Reference planning horizon"/>
+  <arg name="update_frequency" default="10.0" doc="Planning update frequency (Hz)"/>
+  <arg name="enable_visualization" default="true" doc="Enable RViz visualization"/>
+  <arg name="enable_logging" default="true" doc="Enable regret logging to CSV"/>
+  <arg name="log_file" default="/tmp/safe_regret_data.csv" doc="Log file path"/>
+
+  <!-- Load parameters -->
+  <rosparam file="$(find safe_regret)/params/safe_regret_params.yaml" command="load"/>
+
+  <!-- Override with launch arguments -->
+  <param name="no_regret_algorithm" value="$(arg no_regret_algorithm)"/>
+  <param name="planning_horizon" value="$(arg planning_horizon)"/>
+  <param name="update_frequency" value="$(arg update_frequency)"/>
+  <param name="enable_regret_logging" value="$(arg logging)"/>
+  <param name="regret_log_file" value="$(arg log_file)"/>
+
+  <!-- Safe-Regret Node -->
+  <node name="safe_regret_node" pkg="safe_regret" type="safe_regret_node" output="screen">
+    <!-- Remap topics if needed -->
+    <!-- <remap from="/tube_mpc/tracking_error" to="/custom_tracking_error"/> -->
+    <!-- <remap from="/safe_regret/reference_trajectory" to="/custom_reference"/> -->
+  </node>
+
+  <!-- Optional: Static transform for visualization -->
+  <node pkg="tf" type="static_transform_publisher" name="map_to_odom"
+        args="0 0 0 0 0 0 map odom 100"/>
+
+  <!-- Optional: RViz visualization -->
+  <group if="$(arg enable_visualization)">
+    <node name="rviz_safe_regret" pkg="rviz" type="rviz"
+          args="-d $(find safe_regret)/launch/safe_regret_visualization.rviz"
+          required="false"/>
+  </group>
+
+  <!-- Optional: Rqt plot for regret metrics -->
+  <node if="$(arg enable_visualization)" name="rqt_plot_regret" pkg="rqt_plot" type="rqt_plot"
+        args="/safe_regret/regret_metrics/data[0]:data[1]:data[2]"
+        required="false"/>
+
+</launch>

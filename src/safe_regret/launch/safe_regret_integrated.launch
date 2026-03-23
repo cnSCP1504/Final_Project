@@ -1,0 +1,91 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    Safe-Regret MPC - Full Integrated Launch
+    Launches Phase 1 (Tube MPC), Phase 2 (STL Monitor), Phase 3 (DR Tightening),
+    and Phase 4 (Reference Planner) together
+  -->
+
+  <arg name="controller" default="tube_mpc" doc="Controller type"/>
+  <arg name="no_regret_algorithm" default="omd" doc="No-regret algorithm"/>
+  <arg name="rviz" default="true" doc="Launch RViz"/>
+
+  <!-- ==============================
+       Phase 1: Tube MPC
+       ============================== -->
+  <include file="$(find tube_mpc_ros)/launch/tube_mpc_navigation.launch">
+    <arg name="controller" value="$(arg controller)"/>
+    <arg name="rviz" value="false"/>
+  </include>
+
+  <!-- ==============================
+       Phase 2: STL Monitor
+       ============================== -->
+  <include file="$(find stl_monitor)/launch/stl_monitor.launch">
+    <arg name="rviz" value="false"/>
+  </include>
+
+  <!-- ==============================
+       Phase 3: DR Tightening
+       ============================== -->
+  <include file="$(find dr_tightening)/launch/dr_tightening.launch">
+    <arg name="dr_visualization" value="false"/>
+  </include>
+
+  <!-- ==============================
+       Phase 4: Reference Planner
+       ============================== -->
+  <include file="$(find safe_regret)/launch/safe_regret_planner.launch">
+    <arg name="no_regret_algorithm" value="$(arg no_regret_algorithm)"/>
+    <arg name="enable_visualization" value="false"/>
+  </include>
+
+  <!-- ==============================
+       Visualization
+       ============================== -->
+  <group if="$(arg rviz)">
+    <node name="rviz_safe_regret_full" pkg="rviz" type="rviz"
+          args="-d $(find safe_regret)/launch/safe_regret_full_visualization.rviz"
+          required="false"/>
+
+    <!-- Rqt plot for regret metrics -->
+    <node name="rqt_plot_regret" pkg="rqt_plot" type="rqt_plot"
+          args="/safe_regret/regret_metrics/data[0]:data[1]:data[2]"
+          required="false"/>
+
+    <!-- Rqt plot for STL robustness -->
+    <node name="rqt_plot_stl" pkg="rqt_plot" type="rqt_plot"
+          args="/stl_robustness/data"
+          required="false"/>
+
+    <!-- Rqt plot for DR margins -->
+    <node name="rqt_plot_dr" pkg="rqt_plot" type="rqt_plot"
+          args="/dr_margins/data[0]:data[1]"
+          required="false"/>
+  </group>
+
+  <!-- ==============================
+       Information
+       ============================== -->
+  <node pkg="rostopic" type="rostopic" name="topic_info"
+        args="list /safe_regret" output="screen" launch-prefix="bash -c 'sleep 3; echo'"/>
+
+  <!-- Print system status -->
+  <node pkg="rospy" type="talker.py" name="system_info"
+        args="Safe-Regret MPC Full System Started
+Phase 1 (Tube MPC): ✓
+Phase 2 (STL Monitor): ✓
+Phase 3 (DR Tightening): ✓
+Phase 4 (Reference Planner): ✓
+
+Key Topics:
+  /tube_mpc/tracking_error - Tracking errors from Phase 1
+  /stl_robustness - STL robustness from Phase 2
+  /dr_margins - Constraint margins from Phase 3
+  /safe_regret/reference_trajectory - Reference trajectory to Phase 1
+  /safe_regret/regret_metrics - Regret analysis output
+
+Use 'rostopic echo /safe_regret/regret_metrics' to monitor regrets"
+        output="screen" launch-prefix="bash -c 'sleep 5; echo'"/>
+
+</launch>

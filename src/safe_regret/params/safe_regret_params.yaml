@@ -1,0 +1,82 @@
+# Safe-Regret MPC Parameters (Phase 4: Reference Planner)
+# Based on manuscript theoretical parameters
+
+# ============================================================================
+# Regret Analysis Parameters
+# ============================================================================
+
+# Lipschitz constant L_ℓ for stage cost (manuscript Eq. 1095)
+lipschitz_constant: 1.0
+
+# LQR feedback gain K (for tracking error scaling, Eq. 1120)
+# Format: [k1, k2, ..., kn_rows, m_cols]
+# For 2x3 gain matrix (2 inputs, 3 states):
+lqr_gain: [1.0, 0.5, 0.0,
+          0.0, 0.5, 1.0]
+
+# Infeasibility penalty γ (Eq. 267)
+infeasibility_penalty: 1000.0
+
+# Tracking error constant C_e (Lemma 4.6)
+tracking_error_constant: 1.0
+
+# ============================================================================
+# Reference Planner Parameters
+# ============================================================================
+
+# No-regret algorithm: omd, ftrl, mw
+no_regret_algorithm: "omd"
+
+# Learning rate η for online mirror descent
+learning_rate: 0.1
+
+# Planning horizon for reference generation
+planning_horizon: 20
+
+# ============================================================================
+# Feasibility Constraints (Theorem 4.8 conditions)
+# ============================================================================
+
+# Maximum velocity ‖v_k‖ ≤ v_max
+max_velocity: 2.0
+
+# Maximum curvature κ(z_k) ≤ κ_max
+max_curvature: 1.0
+
+# Tube radius ē (for 𝒳 ⊖ ℰ)
+tube_radius: 0.5
+
+# ============================================================================
+# STL Specification Parameters
+# ============================================================================
+
+# STL formula type: reachability, safety, sequence
+stl_formula_type: "reachability"
+
+# STL time horizon
+stl_time_horizon: 10.0
+
+# Robustness weight λ (cost term: -λ·ρ(φ))
+robustness_weight: 10.0
+
+# Robustness budget baseline r̲ (R_{k+1} = max{0, R_k + ρ_k - r̲})
+robustness_budget_baseline: 0.1
+
+# ============================================================================
+# Logging and Visualization
+# ============================================================================
+
+# Enable regret logging to CSV
+enable_regret_logging: true
+
+# Regret log file path
+regret_log_file: "/tmp/safe_regret_data.csv"
+
+# Enable reference trajectory visualization
+enable_reference_viz: true
+
+# Publish reference trajectory on topic
+reference_trajectory_topic: "/safe_regret/reference_trajectory"
+
+# Publish regret metrics on topic
+regret_metrics_topic: "/safe_regret/regret_metrics"

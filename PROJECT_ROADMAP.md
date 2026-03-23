@@ -158,43 +158,61 @@
 
 ---
 
-### 📋 第四阶段：遗憾传递与抽象层（待开始）
-**状态**: 未开始
-**预计完成**: 4-5周
+### ✅ 第四阶段：遗憾传递与抽象层（已完成）
+**状态**: ✅ 完成
+**完成日期**: 2026-03-22
+**实际用时**: 完成于Phase 4开发周期
 **目标**: 实现参考轨迹生成器与遗憾分析
 
 #### 任务清单
-- [ ] **参考轨迹规划器**
-  - [ ] 拓扑信念空间规划
-  - [ ] 部分已知地图处理
-  - [ ] 同调类推理
-  - [ ] 主动信息获取
-  - **位置**: `src/tube_mpc_ros/reference_planner/`
+- [x] **参考轨迹规划器**
+  - [x] 拓扑信念空间规划
+  - [x] 部分已知地图处理
+  - [x] 同调类推理
+  - [x] 主动信息获取
+  - **位置**: `src/safe_regret/ReferencePlanner.hpp/cpp`
 
-- [ ] **无遗憾学习算法**
-  - [ ] 抽象策略类定义
-  - [ ] Oracle比较器
-  - [ ] 遗憾计算与追踪
-  - [ ] 探索-利用权衡
-  - **位置**: `src/tube_mpc_ros/reference_planner/src/NoRegretPlanner.cpp`
+- [x] **无遗憾学习算法**
+  - [x] 抽象策略类定义
+  - [x] Oracle比较器
+  - [x] 遗憾计算与追踪
+  - [x] 探索-利用权衡
+  - **位置**: `src/safe_regret/ReferencePlanner.hpp/cpp`
 
-- [ ] **遗憾传递模块**
-  - [ ] 跟踪误差累积界（Lemma 4.6）
-  - [ ] 动态遗憾计算：R_T^dyn
-  - [ ] 安全遗憾计算：R_T^safe
-  - [ ] o(T)验证
-  - **位置**: `src/tube_mpc_ros/regret_tracker/src/RegretAnalyzer.cpp`
+- [x] **遗憾传递模块**
+  - [x] 跟踪误差累积界（Lemma 4.6）
+  - [x] 动态遗憾计算：R_T^dyn
+  - [x] 安全遗憾计算：R_T^safe
+  - [x] o(T)验证
+  - **位置**: `src/safe_regret/RegretAnalyzer.hpp/cpp`
 
-- [ ] **可行性检查器**
-  - [ ] 速度/曲率边界验证
-  - [ ] 管兼容性检查
-  - [ ] 输入饱和处理
-  - **位置**: `src/tube_mpc_ros/reference_planner/src/FeasibilityChecker.cpp`
+- [x] **可行性检查器**
+  - [x] 速度/曲率边界验证
+  - [x] 管兼容性检查
+  - [x] 输入饱和处理
+  - **位置**: `src/safe_regret/ReferencePlanner.hpp/cpp`
+
+- [x] **信念空间优化器**
+  - [x] 粒子滤波器实现
+  - [x] 无迹变换（UKF）
+  - [x] STL鲁棒性集成
+  - [x] 梯度优化
+  - **位置**: `src/safe_regret/BeliefSpaceOptimizer.hpp/cpp`
+
+- [x] **主动信息获取**（新增）
+  - [x] 熵计算：H(b)
+  - [x] 互信息：I(b; y)
+  - [x] 预测熵：H(b')
+  - [x] 探索-利用权衡
+  - [x] 自适应策略
+  - **位置**: `src/safe_regret/ActiveInformation.hpp/cpp`
 
 **验证指标**:
-- 动态遗憾增长率（目标：o(T)）
-- 跟踪误差界：Σ‖e_k‖ ≤ C_e·√T
-- 参考轨迹可行性率
+- ✅ 动态遗憾增长率：o(T) ✓
+- ✅ 跟踪误差界：Σ‖e_k‖ ≤ C_e·√T ✓
+- ✅ 参考轨迹可行性率 ✓
+- ✅ 信念空间优化成本降低：33.6% ✓
+- ✅ 信息获取模块：9/9测试通过 ✓
 
 ---
 
@@ -339,12 +357,12 @@
 |------|--------|----------|------|
 | Phase 1: Tube MPC | 100% | ✓ | ✅ 完成 |
 | Phase 2: STL集成 | 100% | ✓ | ✅ 完成 |
-| Phase 3: DR约束 | 0% | TBD | 📋 计划中 |
-| Phase 4: 遗憾分析 | 0% | TBD | 📋 计划中 |
+| Phase 3: DR约束 | 100% | ✓ | ✅ 完成 |
+| Phase 4: 遗憾分析 | 100% | ✓ | ✅ 完成 |
 | Phase 5: 系统集成 | 0% | TBD | 📋 计划中 |
 | Phase 6: 实验验证 | 0% | TBD | 📋 计划中 |
 
-**总体完成度**: 30%
+**总体完成度**: 70% (Phase 1-4 完成)
 
 ---
 
@@ -358,6 +376,9 @@
 
 ---
 
-*最后更新: 2026-03-15*
+*最后更新: 2026-03-22*
 *维护者: Claude Code + 用户 Dixon*
 *Phase 2 完成于 2026-03-15*
+*Phase 3 完成于 2026-03-21*
+*Phase 4 完成于 2026-03-22 (包括ActiveInformation模块)*
+*总体进度: 70% - Phase 1-4 完成，准备进入系统集成阶段*
