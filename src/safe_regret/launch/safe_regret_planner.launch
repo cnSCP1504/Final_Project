@@ -16,7 +16,7 @@
   <param name="no_regret_algorithm" value="$(arg no_regret_algorithm)"/>
   <param name="planning_horizon" value="$(arg planning_horizon)"/>
   <param name="update_frequency" value="$(arg update_frequency)"/>
-  <param name="enable_regret_logging" value="$(arg logging)"/>
+  <param name="enable_regret_logging" value="$(arg enable_logging)"/>
   <param name="regret_log_file" value="$(arg log_file)"/>
 
   <!-- Safe-Regret Node -->
