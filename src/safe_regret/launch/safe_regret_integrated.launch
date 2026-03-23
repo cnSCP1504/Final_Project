@@ -15,13 +15,12 @@
        ============================== -->
   <include file="$(find tube_mpc_ros)/launch/tube_mpc_navigation.launch">
     <arg name="controller" value="$(arg controller)"/>
-    <arg name="rviz" value="false"/>
   </include>
 
   <!-- ==============================
        Phase 2: STL Monitor
        ============================== -->
-  <include file="$(find stl_monitor)/launch/stl_monitor.launch">
+  <include file="$(find tube_mpc_ros)/stl_monitor/launch/stl_monitor.launch">
     <arg name="rviz" value="false"/>
   </include>
 
@@ -38,6 +37,7 @@
   <include file="$(find safe_regret)/launch/safe_regret_planner.launch">
     <arg name="no_regret_algorithm" value="$(arg no_regret_algorithm)"/>
     <arg name="enable_visualization" value="false"/>
+    <arg name="enable_logging" value="true"/>
   </include>
 
   <!-- ==============================
