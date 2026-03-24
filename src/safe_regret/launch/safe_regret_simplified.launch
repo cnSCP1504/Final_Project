@@ -15,6 +15,7 @@
        ============================== -->
   <include file="$(find tube_mpc_ros)/launch/tube_mpc_navigation.launch">
     <arg name="controller" value="$(arg controller)"/>
+    <arg name="rviz" value="false"/>
   </include>
 
   <!-- ==============================
@@ -45,20 +46,7 @@
   <!-- ==============================
        Information Display
        ============================== -->
-  <node pkg="rospy" type="talker.py" name="system_info"
-        args="Safe-Regret MPC Simplified System Started
-Phase 1 (Tube MPC): ✓
-Phase 2 (STL Monitor): ✗ Temporarily disabled
-Phase 3 (DR Tightening): ✓
-Phase 4 (Reference Planner): ✓
-
-Key Topics:
-  /tube_mpc/tracking_error - Tracking errors from Phase 1
-  /dr_margins - Constraint margins from Phase 3
-  /safe_regret/reference_trajectory - Reference trajectory to Phase 1
-  /safe_regret/regret_metrics - Regret analysis output
-
-Use rostopic echo /safe_regret/regret_metrics to monitor regrets"
-        output="screen" launch-prefix="bash -c 'sleep 5; echo'"/>
+  <!-- System status information is logged to /rosout topic -->
+  <!-- Monitor system with: rosrun rqt_console rqt_console or rostopic echo /rosout -->
 
 </launch>

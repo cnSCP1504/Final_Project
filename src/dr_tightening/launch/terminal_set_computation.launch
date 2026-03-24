@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    Terminal Set Computation Launch File (P1-1)
+
+    This launch file starts the DR tightening node with terminal set computation
+    enabled for Safe-Regret MPC recursive feasibility guarantees.
+
+    Usage:
+      roslaunch dr_tightening terminal_set_computation.launch
+  -->
+
+  <!-- Load terminal set parameters -->
+  <arg name="enable_terminal_set" default="true"/>
+  <arg name="terminal_set_update_frequency" default="0.2"/>
+  <arg name="terminal_set_params_file" default="$(find tube_mpc_ros)/params/terminal_set_params.yaml"/>
+
+  <!-- Start DR tightening node with terminal set computation -->
+  <node pkg="dr_tightening" type="dr_tightening_node" name="dr_tightening" output="screen">
+
+    <!-- Core parameters -->
+    <rosparam file="$(find dr_tightening)/params/dr_tightening_params.yaml" command="load"/>
+
+    <!-- Terminal set parameters (P1-1) -->
+    <param name="enable_terminal_set" value="$(arg enable_terminal_set)"/>
+    <param name="terminal_set_update_frequency" value="$(arg terminal_set_update_frequency)"/>
+
+    <!-- Load terminal set configuration -->
+    <rosparam file="$(arg terminal_set_params_file)" command="load" if="$(arg enable_terminal_set)"/>
+
+  </node>
+
+  <!-- RViz visualization -->
+  <arg name="rviz" default="false"/>
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find tube_mpc_ros)/rviz/tube_mpc_with_terminal_set.rviz"/>
+
+  <!-- Debug info -->
+  <group if="$(arg enable_terminal_set)">
+    <param name="enable_debug_output" value="true"/>
+  </group>
+
+</launch>

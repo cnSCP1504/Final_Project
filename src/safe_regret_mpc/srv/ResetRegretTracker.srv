@@ -1,0 +1,15 @@
+# Reset Regret Tracker Service
+# Service to reset regret tracking and metrics
+
+# Request
+bool reset_reference            # Reset reference planner regret
+bool reset_dynamic              # Reset dynamic regret
+bool reset_safe                 # Reset safe regret
+bool reset_metrics              # Reset all metrics
+
+---
+# Response
+bool success                    # Success flag
+string message                  # Status message
+float64 cumulative_regret_before  # Cumulative regret before reset
+float64 cumulative_regret_after   # Cumulative regret after reset

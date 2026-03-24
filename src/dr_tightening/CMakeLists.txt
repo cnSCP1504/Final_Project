@@ -33,6 +33,7 @@ add_library(${PROJECT_NAME}
   src/AmbiguityCalibrator.cpp
   src/TighteningComputer.cpp
   src/SafetyLinearization.cpp
+  src/TerminalSetCalculator.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}

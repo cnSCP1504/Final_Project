@@ -1,0 +1,99 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    Tube MPC with Terminal Set Launch File (P1-1)
+
+    This launch file integrates Tube MPC with terminal set constraints for
+    Safe-Regret MPC recursive feasibility (Theorem 4.5).
+
+    Launch sequence:
+      1. Start Tube MPC with terminal set enabled
+      2. Start DR tightening with terminal set computation
+      3. Start visualization (RViz)
+
+    Usage:
+      roslaunch tube_mpc_ros tube_mpc_with_terminal_set.launch
+  -->
+
+  <!-- Arguments -->
+  <arg name="enable_terminal_set" default="true" doc="Enable terminal set constraints"/>
+  <arg name="terminal_set_params" default="$(find tube_mpc_ros)/params/terminal_set_params.yaml"
+        doc="Path to terminal set parameters"/>
+  <arg name="controller" default="tube_mpc" doc="Controller type"/>
+  <arg name="rviz" default="true" doc="Launch RViz"/>
+
+  <!-- ========================================================================
+       1. Tube MPC with Terminal Set
+       ======================================================================== -->
+
+  <!-- Load terminal set parameters if enabled -->
+  <rosparam if="$(arg enable_terminal_set)" file="$(arg terminal_set_params)" command="load"/>
+
+  <!-- Start Tube MPC -->
+  <include file="$(find tube_mpc_ros)/launch/tube_mpc_navigation.launch">
+    <arg name="controller" value="$(arg controller)"/>
+    <arg name="enable_terminal_set" value="$(arg enable_terminal_set)"/>
+  </include>
+
+  <!-- ========================================================================
+       2. DR Tightening with Terminal Set Computation
+       ======================================================================== -->
+
+  <!-- Start DR tightening node with terminal set computation -->
+  <include if="$(arg enable_terminal_set)"
+           file="$(find dr_tightening)/launch/terminal_set_computation.launch">
+    <arg name="enable_terminal_set" value="$(arg enable_terminal_set)"/>
+    <arg name="rviz" value="false"/>  <!-- Don't launch RViz twice -->
+  </include>
+
+  <!-- ========================================================================
+       3. Visualization
+       ======================================================================== -->
+
+  <!-- RViz with terminal set visualization -->
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="rviz_terminal_set"
+        args="-d $(find tube_mpc_ros)/rviz/tube_mpc_with_terminal_set.rviz"
+        required="false"/>
+
+  <!-- ========================================================================
+       4. Diagnostic Topics
+       ======================================================================== -->
+
+  <!-- Terminal set topics (for debugging) -->
+  <group if="$(arg enable_terminal_set)">
+    <!-- Echo terminal set messages -->
+    <node if="$(arg enable_terminal_set)" pkg="rostopic" type="rostopic" name="echo_terminal_set"
+          args="echo /dr_terminal_set" launch-prefix="xterm -e" output="screen"/>
+
+    <!-- Echo terminal set visualization -->
+    <node if="$(arg enable_terminal_set)" pkg="rostopic" type="rostopic" name="echo_terminal_viz"
+          args="echo /terminal_set_viz" launch-prefix="xterm -e" output="screen"/>
+  </group>
+
+  <!-- ========================================================================
+       Information
+       ======================================================================== -->
+
+  <node pkg="rospy" type="text_info_node.py" name="terminal_set_info">
+    <param name="text" value="
+========================================
+Safe-Regret MPC with Terminal Set (P1-1)
+========================================
+
+Terminal Set: $(arg enable_terminal_set)
+
+Topics:
+  - /dr_terminal_set      : Terminal set center and radius
+  - /terminal_set_viz     : RViz visualization marker
+
+Key Features:
+  - Recursive feasibility (Theorem 4.5)
+  - DR control-invariant terminal set
+  - Automatic terminal constraint in MPC
+
+Press Ctrl+C to exit
+========================================
+    "/>
+  </node>
+
+</launch>

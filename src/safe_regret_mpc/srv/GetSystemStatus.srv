@@ -1,0 +1,16 @@
+# Get System Status Service
+# Service to query complete system status
+
+# Request (empty)
+---
+
+# Response
+SafeRegretState current_state   # Current system state
+SafeRegretMetrics metrics       # Performance metrics
+STLRobustness stl_info          # STL robustness info
+DRMargins dr_info               # DR margins info
+TerminalSet terminal_info       # Terminal set info
+
+string system_mode              # Current system mode
+bool system_ready               # System ready status
+string status_message           # Detailed status message

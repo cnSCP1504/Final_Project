@@ -107,13 +107,19 @@
     </node>
 
     <!--  ************** STL Monitoring System **************  -->
-    <!-- NOTE: These nodes require STL_ros package to be properly built -->
+    <!-- STL Monitor with smooth robustness and belief space evaluation -->
 
     <group if="$(arg enable_stl)">
-        <!-- STL Monitor Node -->
-        <!-- Monitors robot state and evaluates STL specifications -->
-        <node name="stl_monitor" pkg="stl_ros" type="stl_monitor.py" output="screen" respawn="false">
-            <param name="stl_spec_file" value="$(arg stl_config)" if="$(eval enable_stl)"/>
+        <!-- STL Monitor Node (Python implementation - standalone version) -->
+        <node name="stl_monitor" pkg="stl_monitor" type="stl_monitor_node_standalone.py" output="screen" respawn="false">
+            <!-- STL parameters -->
+            <param name="temperature" value="0.1"/> <!-- τ for log-sum-exp approximation -->
+            <param name="use_belief_space" value="true"/> <!-- Enable belief space evaluation -->
+            <param name="num_particles" value="100"/> <!-- For particle-based evaluation -->
+            <param name="baseline_requirement" value="0.1"/> <!-- r̲ for budget update -->
+            <param name="update_frequency" value="10.0"/> <!-- 10 Hz update rate -->
+            <param name="log_enabled" value="true"/>
+            <param name="log_file" value="/tmp/stl_monitor_data.csv"/>
 
             <!-- Input topics -->
             <remap from="/robot_pose" to="/amcl_pose"/>
@@ -130,20 +136,8 @@
             <param name="belief_uncertainty_threshold" value="0.1"/>
         </node>
 
-        <!-- STL Visualizer Node -->
-        <!-- Visualizes STL robustness, constraints, and violations in RViz -->
-        <node name="stl_visualizer" pkg="stl_ros" type="stl_visualizer.py" output="screen" respawn="false">
-            <remap from="/stl_robustness" to="/stl/robustness"/>
-            <remap from="/stl_violation" to="/stl/violation"/>
-            <remap from="/stl_budget" to="/stl/budget"/>
-
-            <!-- Visualization parameters -->
-            <param name="visualization_frame" value="map"/>
-            <param name="robustness_marker_scale" value="0.5"/>
-            <param name="violation_marker_color_r" value="1.0"/>
-            <param name="violation_marker_color_g" value="0.0"/>
-            <param name="violation_marker_color_b" value="0.0"/>
-        </node>
+        <!-- Visual marker for STL robustness (integrated into main RViz) -->
+        <!-- Note: stl_visualizer removed - visualization handled in main RViz config -->
     </group>
 
     <!--  ************** Auto Navigation Goal **************  -->

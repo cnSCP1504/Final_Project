@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    终端集测试launch文件
+    简化版本，只测试DR tightening和终端集功能
+  -->
+
+  <arg name="enable_terminal_set" default="true"/>
+  <arg name="test_duration" default="15"/>
+
+  <!-- DR Tightening节点 -->
+  <node pkg="dr_tightening" type="dr_tightening_node" name="dr_tightening" output="screen">
+    <param name="enable_terminal_set" value="$(arg enable_terminal_set)"/>
+    <param name="terminal_set_update_frequency" value="0.5"/>
+    <param name="update_rate" value="2.0"/>  <!-- 2 Hz for testing -->
+    <param name="enable_debug_output" value="true"/>
+
+    <!-- 加载DR参数 -->
+    <rosparam file="$(find dr_tightening)/params/dr_tightening_params.yaml" command="load"/>
+
+    <!-- 加载终端集参数 -->
+    <rosparam if="$(arg enable_terminal_set)" file="$(find tube_mpc_ros)/params/terminal_set_params.yaml" command="load"/>
+  </node>
+
+  <!-- 模拟数据发布器 (用于测试) -->
+  <node pkg="rostopic" type="rostopic" name="tracking_error_publisher" args="pub /tube_mpc/tracking_error std_msgs/Float64MultiArray '{data: [0.1, 0.2, 0.3]}' -r 1"/>
+
+  <!-- 话题监控 -->
+  <node pkg="rostopic" type="rostopic" name="terminal_set_monitor" args="echo /dr_terminal_set"/>
+
+  <!-- 自动关闭节点 (测试超时) -->
+  <node pkg="rospy" type="timed_roslaunch.py" name="timed_roslaunch" args="$(arg test_duration)"/>
+
+</launch>

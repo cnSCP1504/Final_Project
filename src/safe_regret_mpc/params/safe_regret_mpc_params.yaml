@@ -1,0 +1,200 @@
+# Safe-Regret MPC Parameters
+# Complete parameter configuration for unified system
+
+# ========== System Configuration ==========
+system:
+  mode: "SAFE_REGRET_MPC"  # TUBE_MPC, STL_MPC, DR_MPC, SAFE_REGRET_MPC
+  controller_frequency: 20.0  # Hz
+  publish_frequency: 10.0     # Hz
+  debug_mode: false
+
+# ========== MPC Parameters ==========
+mpc:
+  horizon: 20                  # Prediction horizon N
+  ref_vel: 0.5                 # Reference velocity (m/s)
+  max_angvel: 1.5             # Maximum angular velocity (rad/s)
+
+  # Cost weights
+  w_cte: 10.0                 # Cross-track error weight
+  w_etheta: 10.0              # Heading error weight
+  w_vel: 5.0                  # Velocity weight
+  w_angvel: 10.0              # Angular velocity weight
+  w_accel: 5.0                # Acceleration weight
+  w_stl: 10.0                 # STL robustness weight λ
+
+  # Constraints
+  max_cte: 1.0                # Max cross-track error (m)
+  max_etheta: 0.5             # Max heading error (rad)
+
+# ========== STL Monitoring Parameters ==========
+stl:
+  enabled: true
+
+  # Formula specification
+  formula: "G[0,T](safety) & F[0,10](goal)"  # Example STL formula
+  baseline: 0.1              # Robustness baseline r̲
+  initial_budget: 1.0        # Initial budget R_0
+  temperature: 0.05          # Temperature parameter τ
+
+  # Belief space
+  num_particles: 100         # Number of particles for belief space
+  belief_covariance: [0.1, 0.0, 0.0, 0.0,
+                       0.0, 0.1, 0.0, 0.0,
+                       0.0, 0.0, 0.05, 0.0,
+                       0.0, 0.0, 0.0, 0.01]  # 4x4 covariance
+
+  # Evaluation
+  evaluation_horizon: 10     # Evaluation horizon for STL
+  gradient_eps: 1e-6         # Gradient computation epsilon
+
+# ========== DR Constraint Parameters ==========
+dr:
+  enabled: true
+
+  # Risk parameters
+  risk_level: 0.1            # Total risk δ (10%)
+  risk_allocation: "uniform"  # uniform, deadline_weighted, adaptive
+  confidence_level: 0.9      # Confidence level 1-α
+
+  # Ambiguity set
+  ambiguity_type: "chebyshev"  # chebyshev, wasserstein, phi_divergence
+  ambiguity_radius: 0.1      # Ambiguity radius ε
+
+  # Residual collection
+  window_size: 200           # Sliding window size M
+  min_samples: 50            # Minimum samples for computation
+
+  # Tightening
+  lipschitz_const: 1.0       # Lipschitz constant L_h
+  tube_compensation: 0.1     # Tube compensation η_ℰ
+
+# ========== Terminal Set Parameters ==========
+terminal_set:
+  enabled: true
+
+  # Computation
+  computation_method: "lqr"  # lqr, backward_reachable, lyapunov
+  max_iterations: 50
+  convergence_tolerance: 1e-6
+
+  # Terminal constraints
+  terminal_constraint_weight: 1000.0
+  terminal_feasibility_tolerance: 0.1
+
+  # Terminal set bounds
+  x_min: -5.0
+  x_max: 5.0
+  y_min: -5.0
+  y_max: 5.0
+  theta_min: -3.14159
+  theta_max: 3.14159
+  v_min: 0.0
+  v_max: 1.0
+
+  # Update frequency
+  update_frequency: 0.2      # Hz (every 5 seconds)
+
+# ========== Regret Tracking Parameters ==========
+regret:
+  enabled: true
+  max_history: 10000         # Maximum history length
+  oracle_costs: []           # Oracle costs (for evaluation)
+
+  # Bound verification
+  theoretical_bound_coef: 2.0  # Coefficient for o(T) bound
+
+# ========== Performance Monitoring Parameters ==========
+performance:
+  enabled: true
+  max_history: 1000          # Maximum metrics history
+
+  # Logging
+  log_to_file: true
+  log_filename: "/tmp/safe_regret_mpc_performance.csv"
+  log_frequency: 1.0         # Hz
+
+# ========== System Dynamics ==========
+dynamics:
+  state_dim: 6               # [x, y, theta, v, cte, etheta]
+  input_dim: 2               # [v_linear, v_angular]
+  disturbance_dim: 2
+
+  # Discrete-time matrices (for simulation)
+  dt: 0.1                    # Time step
+
+  # State matrices
+  A: [1.0, 0.0, 0.0, 0.1, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0, 0.1, 0.0,
+      0.0, 0.0, 1.0, 0.0, 0.0, 0.1,
+      0.0, 0.0, 0.0, 0.9, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.0, 0.95, 0.0,
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.95]
+
+  B: [0.0, 0.0,
+      0.0, 0.0,
+      0.1, 0.0,
+      0.9, 0.0,
+      0.0, 0.0,
+      0.0, 0.1]
+
+  G: [0.01, 0.0,
+      0.0, 0.01,
+      0.0, 0.0,
+      0.05, 0.0,
+      0.0, 0.05,
+      0.0, 0.0]
+
+# ========== Cost Matrices ==========
+cost:
+  # State cost Q (diagonal)
+  Q: [1.0, 1.0, 1.0, 1.0, 10.0, 10.0]
+
+  # Input cost R (diagonal)
+  R: [1.0, 1.0]
+
+# ========== State/Input Constraints ==========
+constraints:
+  # State bounds
+  x_min: [-10.0, -10.0, -3.14159, 0.0, -1.0, -0.5]
+  x_max: [10.0, 10.0, 3.14159, 1.0, 1.0, 0.5]
+
+  # Input bounds
+  u_min: [0.0, -1.5]
+  u_max: [1.0, 1.5]
+
+# ========== Topic Names ==========
+topics:
+  # Subscribed topics
+  odom: "/odom"
+  global_plan: "/move_base/TrajectoryPlannerROS/global_plan"
+  goal: "/move_base_simple/goal"
+  stl_robustness: "/stl_monitor/robustness"
+  dr_margins: "/dr_margins"
+  terminal_set: "/dr_terminal_set"
+
+  # Published topics
+  cmd_vel: "/cmd_vel"
+  system_state: "/safe_regret_mpc/state"
+  metrics: "/safe_regret_mpc/metrics"
+  mpc_trajectory: "/mpc_trajectory"
+  tube_boundaries: "/tube_boundaries"
+
+# ========== Frame IDs ==========
+frames:
+  global_frame: "map"
+  robot_base_frame: "base_link"
+
+# ========== Visualization ==========
+visualization:
+  enabled: true
+  publish_markers: true
+
+  # Colors (RGB)
+  trajectory_color: [0.0, 1.0, 0.0]     # Green
+  tube_color: [0.0, 0.0, 1.0]           # Blue
+  terminal_set_color: [1.0, 0.0, 0.0]  # Red
+  robustness_color: [1.0, 1.0, 0.0]    # Yellow
+
+  # Transparencies
+  tube_alpha: 0.3
+  terminal_set_alpha: 0.3

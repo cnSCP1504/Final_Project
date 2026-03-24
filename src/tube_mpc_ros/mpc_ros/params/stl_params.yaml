@@ -1,134 +1,33 @@
-# STL (Signal Temporal Logic) Parameters for Tube MPC Navigation
-# This file configures STL monitoring, robustness computation, and constraint integration
+# STL Monitor Parameters
+# Based on Safe-Regret MPC manuscript
 
-# STL Specification Configuration
-stl_specification:
-  # Enable/disable STL constraints
-  enabled: true
+# Smooth robustness parameters
+temperature: 0.1              # τ for log-sum-exp approximation (Remark 3.2)
+use_belief_space: true        # Enable belief-space robustness E[ρ^soft]
+num_particles: 100            # Number of particles for Monte Carlo
+prediction_horizon: 2.0       # Prediction horizon (seconds)
+prediction_dt: 0.1            # Prediction time step
 
-  # STL formula type (for future expansion)
-  # Options: "reachability", "safety", "sequence", "custom"
-  formula_type: "reachability"
+# Robustness budget (Eq. 15)
+baseline_requirement: 0.1     # r̲: Per-step robustness requirement
+initial_budget: 1.0           # R_0
+budget_decay_rate: 0.0        # Decay rate (0.0 = disabled)
 
-  # Time horizon for STL evaluation
-  time_horizon: 20.0  # seconds
+# STL specification
+stl_formula_type: "reachability"
+reachability_threshold: 0.5
+safety_threshold: 0.5
 
-# Robustness Computation Parameters
-robustness:
-  # Smooth robustness computation
-  # Uses log-sum-exp approximation for min/max operators
-  smooth_approximation: true
-  temperature: 0.1  # Lower = more accurate, Higher = smoother
+# Uncertainty
+uncertainty_penalty: 0.5
+belief_covariance_scale: 1.0
 
-  # Robustness budget parameters
-  budget:
-    enabled: true
-    initial_value: 1.0
-    minimum_threshold: 0.0
-    baseline_requirement: 0.1  # Per-step robustness requirement (r̲)
-    decay_rate: 0.0
+# MPC integration
+stl_weight: 10.0              # λ: STL weight in objective
+enable_stl_constraints: true
 
-# STL Predicate Configuration
-predicates:
-  # Reachability predicate (distance to goal)
-  reachability:
-    type: "distance"
-    threshold: 0.5  # meters
-    enabled: true
-
-  # Safety predicate (obstacle avoidance)
-  safety:
-    type: "obstacle_distance"
-    threshold: 0.3  # meters
-    enabled: true
-
-  # Velocity constraints
-  velocity:
-    type: "velocity_limit"
-    max_linear: 1.0  # m/s
-    max_angular: 1.5  # rad/s
-    enabled: true
-
-# Belief Space Integration (for partial observability)
-belief_space:
-  enabled: false  # Set to true when belief-space estimation is implemented
-  uncertainty_threshold: 0.1  # Maximum position uncertainty (m)
-  covariance_weight: 1.0  # Weight for uncertainty in robustness
-
-# STL-MPC Integration Parameters
-integration:
-  # How STL constraints affect MPC optimization
-  constraint_mode: "soft"  # Options: "hard", "soft", "penalty"
-
-  # Soft constraint penalty parameters
-  penalty_weight: 100.0  # Weight for STL violation in cost function
-
-  # Hard constraint parameters
-  min_robustness_threshold: 0.0  # Minimum acceptable robustness
-
-  # Constraint tightening for robust MPC
-  tightening_enabled: true
-  safety_margin: 0.1  # Additional safety margin (m)
-
-# Monitoring Parameters
-monitoring:
-  # Update frequency for STL evaluation
-  update_frequency: 10.0  # Hz
-
-  # Rolling window parameters for temporal logic
-  window_size: 20  # Number of steps to look back
-
-  # Violation handling
-  violation_tolerance: 0.0  # Allow small violations
-  violation_recovery: true  # Attempt recovery from violations
-
-# Visualization Parameters
-visualization:
-  # Publish robustness markers
-  publish_robustness: true
-
-  # Publish constraint boundaries
-  publish_boundaries: true
-
-  # Color scheme for robustness visualization
-  # Green = high robustness, Red = low/negative robustness
-  marker_scale: 0.5
-  marker_lifetime: 0.5  # seconds
-
-# Data Logging
-logging:
-  enabled: true
-  log_file: "/tmp/stl_mpc_data.csv"
-  log_frequency: 10.0  # Hz
-
-  # Fields to log
-  fields:
-    - "timestamp"
-    - "robustness"
-    - "budget"
-    - "violation_count"
-    - "robot_x"
-    - "robot_y"
-    - "robot_theta"
-    - "goal_distance"
-
-# Advanced Parameters (for future implementation)
-advanced:
-  # Distributionally robust chance constraints (Phase 3)
-  dr_chance_constraints:
-    enabled: false
-    risk_level: 0.05  # δ
-    ambiguity_set_size: 200  # M
-
-  # Regret analysis (Phase 4)
-  regret_tracking:
-    enabled: false
-    reference_policy: "none"
-
-  # Multi-objective optimization
-  multi_objective:
-    enabled: false
-    objective_weights:
-      tracking: 1.0
-      robustness: 0.5
-      safety: 1.0
+# Performance
+update_frequency: 10.0         # Hz
+log_enabled: true
+log_file: "/tmp/stl_monitor_data.csv"
+log_frequency: 10

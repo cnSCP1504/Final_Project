@@ -34,6 +34,7 @@
 #include "dr_tightening/AmbiguityCalibrator.hpp"
 #include "dr_tightening/TighteningComputer.hpp"
 #include "dr_tightening/SafetyLinearization.hpp"
+#include "dr_tightening/TerminalSetCalculator.hpp"
 
 #include <Eigen/Dense>
 #include <deque>
@@ -155,6 +156,7 @@ private:
   // Publishers
   ros::Publisher pub_margins_;
   ros::Publisher pub_margins_debug_;
+  ros::Publisher pub_margins_debug_marker_;
   ros::Publisher pub_statistics_;
   ros::Publisher pub_viz_markers_;
   ros::Publisher pub_safety_function_;
@@ -217,6 +219,13 @@ private:
   std::unique_ptr<TighteningComputer> tightening_computer_;
   std::unique_ptr<SafetyLinearization> safety_linearization_;
   std::unique_ptr<NavigationSafetyFunction> safety_function_;
+  std::unique_ptr<TerminalSetCalculator> terminal_set_calculator_;  // P1-1: Terminal set
+
+  // Terminal set (P1-1)
+  bool enable_terminal_set_;
+  bool terminal_set_computed_;
+  double terminal_set_update_frequency_;
+  ros::Time last_terminal_set_update_;
 
   // State tracking
   Eigen::VectorXd current_state_;
@@ -247,6 +256,11 @@ private:
     const Eigen::VectorXd& gradient,
     double& margin_out);
 
+  // P1-1: Terminal set computation
+  bool computeTerminalSet();
+  void publishTerminalSet();
+  bool verifyRecursiveFeasibility();
+
   // Publishing
   void publishMargins(
     const std::vector<double>& margins,
@@ -256,6 +270,10 @@ private:
     const std::vector<double>& margins,
     const std::vector<double>& risk_allocations,
     const Eigen::VectorXd& stats);
+
+  void publishDebugMarker(
+    const std::vector<double>& margins,
+    const std::vector<double>& risk_allocations);
 
   void publishStatistics();
 

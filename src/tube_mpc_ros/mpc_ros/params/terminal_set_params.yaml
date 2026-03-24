@@ -1,0 +1,68 @@
+# Terminal Set Configuration for Safe-Regret MPC (P1-1)
+# This file configures the terminal set constraint for recursive feasibility
+
+# Terminal set enable/disable
+terminal_set:
+  enabled: true  # Enable terminal set constraints
+
+# MPC integration parameters
+mpc:
+  terminal_constraint_weight: 1000.0  # Weight for terminal constraint in MPC cost function
+  terminal_set_tolerance: 0.1  # Tolerance for terminal feasibility checking (meters)
+
+# Terminal set computation parameters
+computation:
+  max_iterations: 50  # Maximum iterations for control-invariant set computation
+  convergence_tolerance: 1.0e-6  # Convergence threshold for set computation
+  use_dr_tightening: true  # Apply distributionally robust constraint tightening
+  risk_delta: 0.1  # Risk level δ for DR constraints (0.1 = 10% violation probability)
+
+# Terminal set dimensions (6D state: [x, y, theta, v, cte, etheta])
+state_constraints:
+  x_min: -5.0  # Minimum x position (m)
+  x_max: 5.0   # Maximum x position (m)
+  y_min: -5.0  # Minimum y position (m)
+  y_max: 5.0   # Maximum y position (m)
+  theta_min: -3.14159  # Minimum orientation (rad)
+  theta_max: 3.14159   # Maximum orientation (rad)
+  v_min: 0.0    # Minimum velocity (m/s)
+  v_max: 1.0    # Maximum velocity (m/s)
+  cte_min: -1.0  # Minimum cross-track error (m)
+  cte_max: 1.0   # Maximum cross-track error (m)
+  etheta_min: -0.5  # Minimum heading error (rad)
+  etheta_max: 0.5   # Maximum heading error (rad)
+
+# Terminal cost matrix (LQR solution)
+terminal_cost:
+  Q: [1.0, 1.0, 1.0, 1.0, 10.0, 10.0]  # State cost weights (diagonal of Q matrix)
+  R: [1.0, 1.0]  # Input cost weights (diagonal of R matrix)
+
+# System dynamics for terminal set computation
+dynamics:
+  state_dim: 6  # State dimension
+  input_dim: 2  # Input dimension
+  disturbance_dim: 2  # Disturbance dimension
+
+# Update frequency
+update:
+  frequency: 0.2  # Terminal set update frequency (Hz) - low to reduce computation
+
+# Visualization
+visualization:
+  enabled: true  # Enable terminal set visualization in RViz
+  publish_frequency: 1.0  # Visualization publish frequency (Hz)
+  color_r: 1.0  # Red channel
+  color_g: 0.0  # Green channel
+  color_b: 0.0  # Blue channel
+  alpha: 0.3  # Transparency (0.0 = invisible, 1.0 = opaque)
+
+# Safety margins
+safety:
+  margin: 0.5  # Additional safety margin for terminal set (meters)
+  tube_compensation: 0.1  # Tube error compensation η_ℰ (meters)
+
+# Recursive feasibility checking
+feasibility:
+  enable_verification: true  # Enable recursive feasibility verification
+  check_frequency: 10  # Check every N updates
+  violation_tolerance: 5  # Maximum allowed violations before warning

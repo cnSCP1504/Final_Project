@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    Test launch file for Safe-Regret MPC
+
+    Simplified version for testing without all dependencies
+  -->
+
+  <arg name="debug" default="false"/>
+
+  <!-- Load parameters -->
+  <rosparam file="$(find safe_regret_mpc)/params/safe_regret_mpc_params.yaml"
+             command="load"/>
+
+  <!-- Test mode: disable external dependencies -->
+  <param name="enable_stl_constraints" value="false"/>
+  <param name="enable_dr_constraints" value="false"/>
+  <param name="enable_terminal_set" value="false"/>
+  <param name="debug_mode" value="$(arg debug)"/>
+
+  <!-- Safe-Regret MPC Node -->
+  <node name="safe_regret_mpc" pkg="safe_regret_mpc" type="safe_regret_mpc_node"
+        output="screen" launch-prefix="$(arg debug) ? gdb --args : ''"/>
+
+  <!-- RViz for visualization -->
+  <node name="rviz" pkg="rviz" type="rviz"
+        args="-d $(find safe_regret_mpc)/rviz/safe_regret_mpc.rviz"
+        required="false"/>
+
+</launch>

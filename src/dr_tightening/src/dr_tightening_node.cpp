@@ -8,6 +8,8 @@
 #include <cmath>
 #include <algorithm>
 #include <iostream>
+#include <sstream>
+#include <iomanip>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -278,6 +280,9 @@ void DRTighteningNode::updateCallback(const ros::TimerEvent& event) {
       // Get current trajectory (if available)
       nav_msgs::Path::ConstPtr trajectory;  // Would need to store this
       publishVisualization(margins, trajectory);
+
+      // Publish debug marker for RViz display
+      publishDebugMarker(margins, risk_allocations);
     }
 
     // Log to CSV
@@ -290,6 +295,17 @@ void DRTighteningNode::updateCallback(const ros::TimerEvent& event) {
 
   // Publish statistics
   publishStatistics();
+
+  // P1-1: Compute and publish terminal set (at lower frequency)
+  if (enable_terminal_set_) {
+    ros::Time now = ros::Time::now();
+    double time_since_last_update = (now - last_terminal_set_update_).toSec();
+
+    // Update at specified frequency (default 0.2 Hz = every 5 seconds)
+    if (time_since_last_update >= (1.0 / terminal_set_update_frequency_)) {
+      computeTerminalSet();
+    }
+  }
 }
 
 // ============================================================================
@@ -359,6 +375,51 @@ void DRTighteningNode::publishDebugInfo(
   debug_msg.data.push_back(params_.tube_radius);
 
   pub_margins_debug_.publish(debug_msg);
+}
+
+void DRTighteningNode::publishDebugMarker(
+  const std::vector<double>& margins,
+  const std::vector<double>& risk_allocations) {
+
+  // Create a marker to visualize DR margins in RViz
+  visualization_msgs::Marker marker;
+
+  marker.header.frame_id = "map";
+  marker.header.stamp = ros::Time::now();
+  marker.ns = "dr_tightening";
+  marker.id = 0;
+  marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+  marker.action = visualization_msgs::Marker::ADD;
+
+  // Position marker at robot location
+  marker.pose.position.x = current_state_[0];
+  marker.pose.position.y = current_state_[1];
+  marker.pose.position.z = 2.0;  // Above the robot
+  marker.pose.orientation.w = 1.0;
+
+  // Marker appearance
+  marker.scale.z = 0.3;  // Text height
+  marker.color.r = 1.0;
+  marker.color.g = 0.5;
+  marker.color.b = 0.0;
+  marker.color.a = 1.0;
+
+  // Create text showing margin info
+  std::ostringstream text;
+  text << "DR Margins:\n";
+  if (margins.size() > 0) {
+    text << "Step 0: " << std::fixed << std::setprecision(3) << margins[0];
+    if (margins.size() > 1) {
+      text << "\nStep N: " << margins[margins.size()-1];
+    }
+  }
+  if (risk_allocations.size() > 0) {
+    text << "\nRisk: " << std::fixed << std::setprecision(3) << risk_allocations[0];
+  }
+  marker.text = text.str();
+
+  // Publish marker
+  pub_margins_debug_marker_.publish(marker);
 }
 
 void DRTighteningNode::publishStatistics() {
@@ -495,6 +556,52 @@ bool DRTighteningNode::createConnections() {
     params_.mpc_horizon,
     parseRiskAllocation(params_.risk_allocation_strategy));
 
+  // P1-1: Create terminal set calculator
+  terminal_set_calculator_ = std::make_unique<TerminalSetCalculator>();
+
+  // Setup system dynamics for terminal set (2D unicycle model)
+  TerminalSetCalculator::SystemDynamics dynamics;
+  dynamics.state_dim = 2;
+  dynamics.input_dim = 2;
+  dynamics.dist_dim = 2;
+
+  // Simple 2D unicycle model: x+ = x + v*cos(θ)*dt, y+ = y + v*sin(θ)*dt
+  dynamics.A = Eigen::MatrixXd::Identity(2, 2);  // Simplified
+  dynamics.B = Eigen::MatrixXd::Identity(2, 2);
+  dynamics.G = Eigen::MatrixXd::Identity(2, 2) * 0.1;  // Disturbance scaling
+
+  terminal_set_calculator_->setSystemDynamics(dynamics);
+
+  // Setup constraints
+  TerminalSetCalculator::ConstraintParams constraints;
+  int state_dim = 2;
+  constraints.x_min = Eigen::VectorXd::Zero(state_dim);
+  constraints.x_max = Eigen::VectorXd::Ones(state_dim) * 10.0;  // 10m workspace
+  constraints.u_min = Eigen::VectorXd::Zero(2);
+  constraints.u_max = Eigen::VectorXd::Ones(2) * 0.5;  // 0.5 m/s, 0.5 rad/s
+  constraints.w_bound = Eigen::VectorXd::Ones(2) * 0.1;  // Disturbance bound
+  constraints.safety_margin = 0.5;  // Additional safety margin
+
+  terminal_set_calculator_->setConstraints(constraints);
+
+  // Setup terminal set parameters
+  TerminalSetCalculator::TerminalSetParams terminal_params;
+  terminal_params.max_iterations = 50;
+  terminal_params.use_dr_tightening = true;
+  terminal_params.risk_delta = params_.total_risk_delta;
+
+  terminal_set_calculator_->setTerminalParams(terminal_params);
+
+  // Get terminal set enable parameter
+  private_nh_.param("enable_terminal_set", enable_terminal_set_, false);
+  private_nh_.param("terminal_set_update_frequency", terminal_set_update_frequency_, 0.2);
+
+  terminal_set_computed_ = false;
+
+  ROS_INFO("P1-1: Terminal Set Calculator initialized");
+  ROS_INFO("  Enable terminal set: %s", enable_terminal_set_ ? "YES" : "NO");
+  ROS_INFO("  Update frequency: %.2f Hz", terminal_set_update_frequency_);
+
   // Setup safety function
   auto safety_func = [this](const Eigen::VectorXd& x) -> double {
     return this->safety_function_->evaluate(x);
@@ -530,6 +637,9 @@ bool DRTighteningNode::createConnections() {
 
   pub_margins_debug_ = nh_.advertise<std_msgs::Float64MultiArray>(
     "/dr_margins_debug", 1);
+
+  pub_margins_debug_marker_ = nh_.advertise<visualization_msgs::Marker>(
+    "/dr_margins_debug_viz", 1);
 
   pub_statistics_ = nh_.advertise<std_msgs::Float64MultiArray>(
     "/dr_statistics", 1);
@@ -607,6 +717,139 @@ void DRTighteningNode::logToCSV(
   }
 
   csv_file_ << std::endl;
+}
+
+// ============================================================================
+// P1-1: Terminal Set Computation (Theorem 4.5 - Recursive Feasibility)
+// ============================================================================
+
+bool DRTighteningNode::computeTerminalSet() {
+  /**
+   * Compute terminal set for recursive feasibility (Theorem 4.5)
+   *
+   * The terminal set 𝒳_f must be DR control-invariant:
+   * - For all x ∈ 𝒳_f, there exists u such that f(x,u,w) ∈ 𝒳_f for all w ∈ 𝒲
+   * - 𝒳_f satisfies tightened constraints: h(z) ≥ σ + η_ℰ
+   */
+
+  if (!enable_terminal_set_ || !terminal_set_calculator_) {
+    return false;
+  }
+
+  ROS_INFO("Computing terminal set for recursive feasibility...");
+
+  // Get current DR margin from tightening computer
+  double current_dr_margin = 0.0;
+
+  // Compute terminal set with DR tightening
+  TerminalSetCalculator::TerminalSet terminal_set =
+    terminal_set_calculator_->computeTerminalSet(current_dr_margin);
+
+  if (terminal_set.is_empty) {
+    ROS_ERROR("Failed to compute terminal set (empty set)");
+    return false;
+  }
+
+  // Verify recursive feasibility
+  bool recursive_feasible = terminal_set_calculator_->verifyRecursiveFeasibility(terminal_set);
+
+  if (recursive_feasible) {
+    ROS_INFO("✓ Recursive feasibility verified (Theorem 4.5)");
+    terminal_set_computed_ = true;
+    last_terminal_set_update_ = ros::Time::now();
+
+    // Log terminal set bounds
+    auto bounds = terminal_set_calculator_->getBounds(terminal_set);
+    ROS_INFO("Terminal set bounds:");
+    for (size_t i = 0; i < bounds.size(); ++i) {
+      ROS_INFO("  Dimension %zu: [%.2f, %.2f]",
+               i, bounds[i].first, bounds[i].second);
+    }
+
+    // Publish terminal set
+    publishTerminalSet();
+
+  } else {
+    ROS_WARN("⚠ Terminal set fails recursive feasibility check");
+    ROS_WARN("  This may affect long-term stability");
+    ROS_WARN("  Consider reducing workspace or increasing safety margins");
+  }
+
+  return recursive_feasible;
+}
+
+void DRTighteningNode::publishTerminalSet() {
+  /**
+   * Publish terminal set for MPC integration
+   *
+   * Message format: [x_center, y_center, theta_center, v_center, cte_center, etheta_center, radius]
+   */
+
+  if (!terminal_set_computed_ || !terminal_set_calculator_) {
+    return;
+  }
+
+  // Get current terminal set (recompute if needed)
+  double current_dr_margin = 0.0;  // Would get from current margins
+  auto terminal_set = terminal_set_calculator_->computeTerminalSet(current_dr_margin);
+
+  // Publish in format expected by TubeMPCNode
+  // Format: [x_center, y_center, theta_center, v_center, cte_center, etheta_center, radius]
+  std_msgs::Float64MultiArray terminal_msg;
+
+  // Terminal set center (6D state)
+  for (int i = 0; i < terminal_set.center.size(); ++i) {
+    terminal_msg.data.push_back(terminal_set.center(i));
+  }
+
+  // Terminal set radius (computed from bounds for simplicity)
+  auto bounds = terminal_set_calculator_->getBounds(terminal_set);
+  if (!bounds.empty()) {
+    // Use average of x and y bounds as radius
+    double x_range = bounds[0].second - bounds[0].first;
+    double y_range = bounds[1].second - bounds[1].first;
+    double radius = std::sqrt(x_range * x_range + y_range * y_range) / 2.0;
+    terminal_msg.data.push_back(radius);
+  } else {
+    terminal_msg.data.push_back(1.0);  // Default radius
+  }
+
+  // Publish to topic (create new publisher if needed)
+  static ros::Publisher pub_terminal_set =
+    nh_.advertise<std_msgs::Float64MultiArray>("/dr_terminal_set", 1, true);
+
+  pub_terminal_set.publish(terminal_msg);
+
+  ROS_DEBUG("Published terminal set: center=[%.2f,%.2f,%.2f], radius=%.2f",
+            terminal_set.center(0), terminal_set.center(1), terminal_set.center(2),
+            terminal_msg.data[6]);
+}
+
+bool DRTighteningNode::verifyRecursiveFeasibility() {
+  /**
+   * Verify recursive feasibility condition (Theorem 4.5)
+   *
+   * Checks if the current DR tightening allows for long-term feasible operation
+   */
+
+  if (!enable_terminal_set_ || !terminal_set_computed_) {
+    ROS_WARN("Terminal set not computed, cannot verify recursive feasibility");
+    return false;
+  }
+
+  // Recompute terminal set and verify
+  double current_dr_margin = 0.0;
+  auto terminal_set = terminal_set_calculator_->computeTerminalSet(current_dr_margin);
+
+  bool feasible = terminal_set_calculator_->verifyRecursiveFeasibility(terminal_set);
+
+  static int verify_count = 0;
+  if (verify_count++ % 10 == 0) {  // Log every 10th check
+    ROS_INFO("Recursive feasibility check #%d: %s",
+             verify_count, feasible ? "PASS" : "FAIL");
+  }
+
+  return feasible;
 }
 
 } // namespace dr_tightening

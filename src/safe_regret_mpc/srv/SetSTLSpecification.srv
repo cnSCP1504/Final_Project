@@ -1,0 +1,17 @@
+# Set STL Specification Service
+# Service to set or update STL formula specification
+
+# Request
+string stl_formula              # STL formula string
+string formula_type             # Formula type
+float64 time_horizon            # Time horizon for evaluation
+float64 robustness_baseline     # Baseline robustness requirement r̲
+float64 temperature             # Temperature parameter τ
+float64 weight                  # Weight in MPC cost λ
+
+---
+# Response
+bool success                    # Success flag
+string message                  # Status message
+uint32 formula_id               # Assigned formula ID
+float64 initial_robustness      # Initial robustness value

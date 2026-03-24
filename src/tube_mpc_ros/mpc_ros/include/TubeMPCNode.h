@@ -14,6 +14,8 @@
 #include <nav_msgs/Odometry.h>
 #include <visualization_msgs/Marker.h>
 #include <std_msgs/Float64MultiArray.h>
+#include <std_msgs/Float32.h>
+#include <std_msgs/Bool.h>
 #include <fstream>
 
 #include "TubeMPC.h"
@@ -34,6 +36,7 @@ class TubeMPCNode
     private:
         ros::NodeHandle _nh;
         ros::Subscriber _sub_odom, _sub_path, _sub_goal, _sub_amcl;
+        ros::Subscriber _sub_stl_robustness, _sub_stl_budget, _sub_stl_violation;  // STL integration
         ros::Publisher _pub_globalpath, _pub_odompath, _pub_twist, _pub_mpctraj, _pub_tube;
         ros::Publisher _pub_tracking_error;  // DR Tightening: publish tracking error/residuals
         ros::Timer _timer1;
@@ -77,6 +80,24 @@ class TubeMPCNode
         std::string _metrics_output_csv;
         double _target_delta;
 
+        // STL integration variables
+        bool _enable_stl_constraints;
+        double _stl_weight;
+        double _current_stl_robustness;
+        double _current_stl_budget;
+        bool _current_stl_violation;
+        double _stl_ref_cte_adjustment;
+        double _stl_ref_vel_adjustment;
+
+        // Terminal set integration (P1-1)
+        bool _enable_terminal_set;
+        ros::Subscriber _sub_terminal_set;  // P1-1: Terminal set subscription
+        ros::Publisher _pub_terminal_set_viz;  // P1-1: Terminal set visualization
+        bool _terminal_set_received;
+        Eigen::VectorXd _terminal_set_center;
+        double _terminal_set_radius;
+        int _terminal_set_violation_count;
+
         double polyeval(Eigen::VectorXd coeffs, double x);
         Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals, int order);
 
@@ -87,6 +108,17 @@ class TubeMPCNode
         void controlLoopCB(const ros::TimerEvent&);
         void estimateDisturbance(const nav_msgs::Odometry& odom);
         void visualizeTube();
+
+        // STL callback functions
+        void stlRobustnessCB(const std_msgs::Float32::ConstPtr& msg);
+        void stlBudgetCB(const std_msgs::Float32::ConstPtr& msg);
+        void stlViolationCB(const std_msgs::Bool::ConstPtr& msg);
+        void adjustReferenceForSTL(double& ref_cte, double& ref_vel);
+
+        // Terminal set callback functions (P1-1)
+        void terminalSetCB(const std_msgs::Float64MultiArray::ConstPtr& msg);
+        void visualizeTerminalSet();
+        bool checkTerminalFeasibilityInLoop(const Eigen::VectorXd& terminal_state);
 };
 
 #endif

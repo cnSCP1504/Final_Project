@@ -195,10 +195,10 @@ Visualization Manager:
           Buffer Length: 1
           Class: rviz/Marker
           Enabled: true
-          Marker Topic: /dr_margins_debug
-          Name: DR_Margins_Debug
+          Marker Topic: /dr_margins_debug_viz
+          Name: DR_Margins_Viz
           Namespaces:
-            {}
+            dr_tightening: true
           Queue Size: 100
           Unreliable: false
           Value: true

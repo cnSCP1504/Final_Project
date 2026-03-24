@@ -1,0 +1,181 @@
+<?xml version="1.0"?>
+<launch>
+  <!--
+    Full Integration Test Launch File
+
+    Tests the complete Safe-Regret MPC system with all components:
+    - STL Monitor (stl_monitor)
+    - DR Tightening (dr_tightening)
+    - Terminal Set Computation
+    - Safe-Regret MPC Unified Node
+
+    Usage:
+      roslaunch safe_regret_mpc test_full_integration.launch
+  -->
+
+  <!-- ========== Arguments ========== -->
+  <arg name="verbose" default="true"
+        doc="Enable verbose output"/>
+
+  <arg name="test_duration" default="30"
+        doc="Test duration in seconds"/>
+
+  <arg name="enable_stl" default="true"
+        doc="Enable STL monitoring"/>
+
+  <arg name="enable_dr" default="true"
+        doc="Enable DR tightening"/>
+
+  <arg name="enable_terminal_set" default="true"
+        doc="Enable terminal set"/>
+
+  <!-- ========== Core Parameters ========== -->
+  <param name="test_mode" value="true"/>
+  <param name="verbose_output" value="$(arg verbose)"/>
+
+  <!-- ========== 1. STL Monitor Node ========== -->
+  <group if="$(arg enable_stl)">
+    <node name="stl_monitor" pkg="stl_monitor" type="stl_monitor_node.py"
+          output="screen" required="false">
+
+      <!-- STL Monitor parameters -->
+      <param name="temperature" value="0.05"/>
+      <param name="baseline" value="0.1"/>
+      <param name="initial_budget" value="1.0"/>
+      <param name="publish_frequency" value="10"/>
+
+      <!-- Topics -->
+      <remap from="stl_formula" to="/stl_monitor/formula"/>
+      <remap from="belief" to="/belief"/>
+      <remap from="stl_robustness" to="/stl_monitor/robustness"/>
+      <remap from="stl_budget" to="/stl_monitor/budget"/>
+      <remap from="stl_gradients" to="/stl_monitor/gradients"/>
+
+    </node>
+
+    <!-- Test STL formula publisher -->
+    <node name="test_stl_publisher" pkg="rostopic" type="rostopic"
+          args="pub /stl_monitor/formula stl_monitor/STLFormula 'formula: \"G[0,10](x > 0)\"' -r 0.1"
+          required="false"/>
+  </group>
+
+  <!-- ========== 2. DR Tightening Node ========== -->
+  <group if="$(arg enable_dr)">
+    <node name="dr_tightening" pkg="dr_tightening" type="dr_tightening_node"
+          output="screen" required="false">
+
+      <!-- DR Tightening parameters -->
+      <param name="window_size" value="200"/>
+      <param name="delta" value="0.1"/>
+      <param name="ambiguity_radius" value="0.1"/>
+      <param name="risk_allocation" value="UNIFORM"/>
+
+      <!-- Topics -->
+      <remap from="residuals" to="/tube_mpc/tracking_error"/>
+      <remap from="dr_margins" to="/dr_margins"/>
+      <remap from="ambiguity_set" to="/ambiguity_set"/>
+      <remap from="residual_statistics" to="/residual_statistics"/>
+
+    </node>
+
+    <!-- Test residual publisher -->
+    <node name="test_residual_publisher" pkg="rostopic" type="rostopic"
+          args="pub /tube_mpc/tracking_error geometry_msgs/Vector3 '{x: 0.01, y: 0.02, z: 0.0}' -r 20"
+          required="false"/>
+  </group>
+
+  <!-- ========== 3. Terminal Set Computation ========== -->
+  <group if="$(arg enable_terminal_set)">
+    <node name="terminal_set_computer" pkg="dr_tightening" type="terminal_set_computation_node"
+          output="screen" required="false">
+
+      <!-- Terminal Set parameters -->
+      <param name="computation_method" value="LQR"/>
+      <param name="dr_margin" value="0.5"/>
+      <param name="computation_frequency" value="5"/>
+
+      <!-- Topics -->
+      <remap from="terminal_set" to="/terminal_set"/>
+      <remap from="dr_margin" to="/dr_margins"/>
+
+    </node>
+  </group>
+
+  <!-- ========== 4. Safe-Regret MPC Unified Node ========== -->
+  <node name="safe_regret_mpc" pkg="safe_regret_mpc" type="safe_regret_mpc_node"
+        output="screen" required="true">
+
+    <!-- Safe-Regret MPC parameters -->
+    <param name="controller_mode" value="SAFE_REGRET_MPC"/>
+    <param name="enable_stl_constraints" value="$(arg enable_stl)"/>
+    <param name="enable_dr_constraints" value="$(arg enable_dr)"/>
+    <param name="enable_terminal_set" value="$(arg enable_terminal_set)"/>
+    <param name="debug_mode" value="$(arg verbose)"/>
+    <param name="controller_frequency" value="20"/>
+    <param name="mpc_steps" value="20"/>
+    <param name="mpc_ref_vel" value="0.5"/>
+
+    <!-- STL integration parameters -->
+    <param name="stl_weight" value="10.0"/>
+    <param name="stl_baseline" value="0.1"/>
+    <param name="temperature" value="0.05"/>
+
+    <!-- DR integration parameters -->
+    <param name="dr_delta" value="0.1"/>
+    <param name="risk_allocation" value="UNIFORM"/>
+
+    <!-- Terminal set parameters -->
+    <param name="terminal_radius" value="2.0"/>
+
+    <!-- Subscribed topics -->
+    <remap from="odom" to="/odom"/>
+    <remap from="global_plan" to="/global_plan"/>
+    <remap from="goal" to="/goal"/>
+
+    <!-- STL topics -->
+    <remap from="stl_robustness" to="/stl_monitor/robustness"/>
+    <remap from="stl_budget" to="/stl_monitor/budget"/>
+
+    <!-- DR topics -->
+    <remap from="dr_margins" to="/dr_margins"/>
+    <remap from="terminal_set" to="/terminal_set"/>
+
+    <!-- Published topics -->
+    <remap from="cmd_vel" to="/cmd_vel"/>
+    <remap from="system_state" to="/safe_regret_mpc/state"/>
+    <remap from="metrics" to="/safe_regret_mpc/metrics"/>
+    <remap from="mpc_trajectory" to="/mpc_trajectory"/>
+    <remap from="tube_boundaries" to="/tube_boundaries"/>
+
+  </node>
+
+  <!-- ========== 5. Test Data Publishers ========== -->
+
+  <!-- Simulated odometry -->
+  <node name="test_odom_publisher" pkg="rostopic" type="rostopic"
+        args="pub /odom nav_msgs/Odometry -r 20"
+        launch-prefix="python3 $(find safe_regret_mpc)/scripts/publish_test_odom.py"
+        required="false"/>
+
+  <!-- Simulated global plan -->
+  <node name="test_plan_publisher" pkg="rostopic" type="rostopic"
+        args="pub /global_plan nav_msgs/Path '{header: {frame_id: \"map\"}, poses: [{pose: {position: {x: 1.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}}]}'
+        -r 0.5"
+        required="false"/>
+
+  <!-- ========== 6. Verification & Monitoring ========== -->
+
+  <!-- Topic monitor for verification -->
+  <node name="test_monitor" pkg="safe_regret_mpc" type="integration_test_node"
+        output="screen" launch-prefix="timeout $(arg test_duration)"
+        required="false"/>
+
+  <!-- RQT console for monitoring -->
+  <node name="rqt_console" pkg="rqt_console" type="rqt_console"
+        required="false"/>
+
+  <!-- RQT graph for visualization -->
+  <node name="rqt_graph" pkg="rqt_graph" type="rqt_graph"
+        required="false"/>
+
+</launch>

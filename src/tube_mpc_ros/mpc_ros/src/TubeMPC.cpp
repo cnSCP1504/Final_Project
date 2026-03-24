@@ -11,20 +11,26 @@ using CppAD::AD;
 class FG_eval_Tube {
 public:
     Eigen::VectorXd coeffs;
-    
+
     double _dt, _ref_cte, _ref_etheta, _ref_vel;
     double _w_cte, _w_etheta, _w_vel, _w_angvel, _w_accel;
     int _mpc_steps;
-    
+
     MatrixXd _K;
     MatrixXd _A_cl;
     double _tube_radius;
-    
+
+    // Terminal set support (P1-1)
+    bool _use_terminal_set;
+    Eigen::VectorXd _terminal_set_center;
+    double _terminal_set_radius;
+    double _terminal_constraint_weight;
+
     int _z_start, _e_start, _v_nom_start;
     
     FG_eval_Tube(Eigen::VectorXd coeffs) {
         this->coeffs = coeffs;
-        
+
         _dt = 0.1;
         _ref_cte = 0;
         _ref_etheta = 0;
@@ -35,7 +41,13 @@ public:
         _w_angvel = 100;
         _w_accel = 50;
         _mpc_steps = 20;
-        
+
+        // Terminal set initialization (P1-1)
+        _use_terminal_set = false;
+        _terminal_set_center = Eigen::VectorXd::Zero(6);
+        _terminal_set_radius = 0.0;
+        _terminal_constraint_weight = 1000.0;
+
         _z_start = 0;
         _e_start = _z_start + 6 * (_mpc_steps + 1);
         _v_nom_start = _e_start + 6 * (_mpc_steps + 1);
@@ -45,6 +57,18 @@ public:
         _K = K;
         _A_cl = A_cl;
         _tube_radius = tube_radius;
+    }
+
+    // Terminal set methods (P1-1)
+    void setTerminalSet(const Eigen::VectorXd& center, double radius, double weight = 1000.0) {
+        _terminal_set_center = center;
+        _terminal_set_radius = radius;
+        _terminal_constraint_weight = weight;
+        _use_terminal_set = true;
+    }
+
+    void disableTerminalSet() {
+        _use_terminal_set = false;
     }
     
     void LoadParams(const std::map<string, double> &params) {
@@ -88,7 +112,34 @@ public:
             }
             fg[0] += e_norm_sq;
         }
-        
+
+        // Terminal set constraint (P1-1) - Soft constraint on terminal state
+        if (_use_terminal_set) {
+            int terminal_idx = _z_start + 6 * _mpc_steps;  // Last nominal state
+
+            // Compute distance from terminal state to terminal set center
+            // Only consider position (x, y, theta) for terminal constraint
+            AD<double> terminal_error_x = vars[terminal_idx + 0] - _terminal_set_center(0);
+            AD<double> terminal_error_y = vars[terminal_idx + 1] - _terminal_set_center(1);
+            AD<double> terminal_error_theta = vars[terminal_idx + 2] - _terminal_set_center(2);
+
+            AD<double> terminal_distance_sq = terminal_error_x * terminal_error_x +
+                                               terminal_error_y * terminal_error_y +
+                                               terminal_error_theta * terminal_error_theta;
+
+            // Add penalty if terminal state is outside terminal set
+            // Soft constraint: penalty = weight * max(0, distance - radius)^2
+            AD<double> radius_violation = CppAD::sqrt(terminal_distance_sq) - _terminal_set_radius;
+
+            // Use smooth approximation of max(0, x): x if x > 0, else 0
+            // CppAD::CondExpGt(comparison, left, right, if_true, if_false)
+            AD<double> violation_penalty = CppAD::pow(
+                CppAD::CondExpGt(radius_violation, AD<double>(0.0),
+                                 radius_violation, AD<double>(0.0)), 2);
+
+            fg[0] += _terminal_constraint_weight * violation_penalty;
+        }
+
         for (int i = 0; i < 6; i++) {
             fg[1 + _z_start + i] = vars[_z_start + i];
             fg[1 + _e_start + i] = vars[_e_start + i];
@@ -142,25 +193,31 @@ TubeMPC::TubeMPC() {
     _B = MatrixXd::Zero(6, 2);
     _B(2, 0) = 1;
     _B(3, 1) = 1;
-    
+
     _Q = MatrixXd::Identity(6, 6);
     _R = MatrixXd::Identity(2, 2);
-    
+
     _disturbance_bound = 0.1;
     _tube_radius = 0.0;
-    
+
     _mpc_steps = 20;
     _dt = 0.1;
     _max_angvel = 3.0;
     _max_throttle = 1.0;
     _bound_value = 1.0e3;
-    
+
     _z_nominal = VectorXd::Zero(6);
     _e_current = VectorXd::Zero(6);
-    
+
     _z_start = 0;
     _e_start = 0;
     _v_nom_start = 0;
+
+    // Initialize terminal set variables (P1-1)
+    terminal_set_enabled_ = false;
+    terminal_set_center_ = VectorXd::Zero(6);
+    terminal_set_radius_ = 0.0;
+    terminal_constraint_weight_ = 1000.0;  // High weight for terminal constraint
 }
 
 void TubeMPC::LoadParams(const std::map<string, double> &params) {
@@ -314,6 +371,57 @@ double TubeMPC::getTubeRadius() const {
     return _tube_radius;
 }
 
+// Terminal set methods (P1-1 implementation)
+
+void TubeMPC::setTerminalSet(const VectorXd& center, double radius) {
+    terminal_set_center_ = center;
+    terminal_set_radius_ = radius;
+    terminal_set_enabled_ = true;
+
+    cout << "Terminal set configured:" << endl;
+    cout << "  Center: " << terminal_set_center_.transpose() << endl;
+    cout << "  Radius: " << terminal_set_radius_ << endl;
+    cout << "  Enabled: " << (terminal_set_enabled_ ? "YES" : "NO") << endl;
+}
+
+void TubeMPC::enableTerminalSet(bool enable) {
+    terminal_set_enabled_ = enable;
+
+    if (enable && terminal_set_radius_ > 0) {
+        cout << "Terminal set constraint enabled" << endl;
+    } else {
+        cout << "Terminal set constraint disabled" << endl;
+    }
+}
+
+bool TubeMPC::checkTerminalFeasibility(const VectorXd& terminal_state) {
+    if (!terminal_set_enabled_) {
+        return true;  // No terminal constraint, always feasible
+    }
+
+    // Check if terminal state is within the terminal set
+    // For simplicity, we check Euclidean distance to center
+    VectorXd diff = terminal_state - terminal_set_center_;
+
+    // Only consider position (x, y) and orientation (theta) for feasibility
+    VectorXd position_error(3);
+    position_error << diff(0), diff(1), diff(2);  // x, y, theta
+
+    double distance = position_error.norm();
+
+    bool feasible = distance <= terminal_set_radius_;
+
+    if (!feasible) {
+        cout << "Terminal feasibility violation:" << endl;
+        cout << "  Distance to center: " << distance << endl;
+        cout << "  Terminal radius: " << terminal_set_radius_ << endl;
+        cout << "  Terminal state: " << terminal_state.transpose() << endl;
+        cout << "  Terminal center: " << terminal_set_center_.transpose() << endl;
+    }
+
+    return feasible;
+}
+
 vector<double> TubeMPC::Solve(VectorXd state, VectorXd coeffs) {
     bool ok = true;
     typedef CPPAD_TESTVECTOR(double) Dvector;
@@ -327,7 +435,16 @@ vector<double> TubeMPC::Solve(VectorXd state, VectorXd coeffs) {
     FG_eval_Tube fg_eval(coeffs);
     fg_eval.setTubeParams(_K, _A_cl, _tube_radius);
     fg_eval.LoadParams(_params);
-    
+
+    // Configure terminal set (P1-1)
+    if (terminal_set_enabled_) {
+        fg_eval.setTerminalSet(terminal_set_center_, terminal_set_radius_,
+                               terminal_constraint_weight_);
+        cout << "Terminal set enabled in MPC solver" << endl;
+    } else {
+        fg_eval.disableTerminalSet();
+    }
+
     _z_start = fg_eval._z_start;
     _e_start = fg_eval._e_start;
     _v_nom_start = fg_eval._v_nom_start;

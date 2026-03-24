@@ -1,7 +1,10 @@
 #define HAVE_CSTDDEF
+#define HAVE_CSTDDEF
 #include "TubeMPCNode.h"
 #include <cppad/ipopt/solve.hpp>
 #include <Eigen/Core>
+#include <std_msgs/Float32.h>
+#include <std_msgs/Bool.h>
 #undef HAVE_CSTDDEF
 
 using namespace std;
@@ -98,6 +101,61 @@ TubeMPCNode::TubeMPCNode()
     _metrics_collector.setupROSPublishers(_nh);
 
     ROS_INFO("MetricsCollector initialized with CSV output: %s", _metrics_output_csv.c_str());
+
+    // STL integration parameters
+    pn.param("enable_stl_constraints", _enable_stl_constraints, false);
+    pn.param("stl_weight", _stl_weight, 10.0);
+
+    // Initialize STL state variables
+    _current_stl_robustness = 1.0;  // Start with positive robustness
+    _current_stl_budget = 1.0;
+    _current_stl_violation = false;
+    _stl_ref_cte_adjustment = 0.0;
+    _stl_ref_vel_adjustment = 0.0;
+
+    if(_enable_stl_constraints)
+    {
+        ROS_INFO("STL constraints enabled with weight: %.2f", _stl_weight);
+
+        // Subscribe to STL topics
+        _sub_stl_robustness = _nh.subscribe("/stl/robustness", 1, &TubeMPCNode::stlRobustnessCB, this);
+        _sub_stl_budget = _nh.subscribe("/stl/budget", 1, &TubeMPCNode::stlBudgetCB, this);
+        _sub_stl_violation = _nh.subscribe("/stl/violation", 1, &TubeMPCNode::stlViolationCB, this);
+
+        ROS_INFO("Subscribed to STL topics: /stl/robustness, /stl/budget, /stl/violation");
+    }
+    else
+    {
+        ROS_INFO("STL constraints disabled");
+    }
+
+    // Terminal set integration (P1-1)
+    pn.param("enable_terminal_set", _enable_terminal_set, false);
+
+    if(_enable_terminal_set)
+    {
+        ROS_INFO("Terminal set constraints enabled");
+
+        // Subscribe to terminal set topic
+        _sub_terminal_set = _nh.subscribe("/dr_terminal_set", 1,
+            &TubeMPCNode::terminalSetCB, this);
+
+        // Publisher for terminal set visualization
+        _pub_terminal_set_viz = _nh.advertise<visualization_msgs::Marker>(
+            "/terminal_set_viz", 1);
+
+        // Initialize terminal set state
+        _terminal_set_received = false;
+        _terminal_set_center = VectorXd::Zero(6);
+        _terminal_set_radius = 0.0;
+        _terminal_set_violation_count = 0;
+
+        ROS_INFO("Subscribed to terminal set topic: /dr_terminal_set");
+    }
+    else
+    {
+        ROS_INFO("Terminal set constraints disabled");
+    }
 
     _tube_mpc_params["DT"] = _dt;
     _tube_mpc_params["STEPS"]    = _mpc_steps;
@@ -421,10 +479,37 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
 
         VectorXd state(6);
         state << 0, 0, 0, v, cte, etheta;
-        
+
         VectorXd nominal_state(6);
         nominal_state << 0, 0, 0, v, cte, etheta;
-        
+
+        // =====================================================================
+        // STL Integration: Adjust references based on STL state (P0-3)
+        // =====================================================================
+        if (_enable_stl_constraints)
+        {
+            // Create local copies of reference values for adjustment
+            double adjusted_ref_cte = _ref_cte;
+            double adjusted_ref_vel = _ref_vel;
+
+            // Apply STL-aware adjustments
+            adjustReferenceForSTL(adjusted_ref_cte, adjusted_ref_vel);
+
+            // Update MPC parameters with adjusted references
+            _tube_mpc_params["REF_CTE"] = adjusted_ref_cte;
+            _tube_mpc_params["REF_V"] = adjusted_ref_vel;
+
+            // Reload parameters into MPC solver
+            _tube_mpc.LoadParams(_tube_mpc_params);
+
+            // Log STL integration status occasionally
+            static int stl_log_counter = 0;
+            if(stl_log_counter++ % 50 == 0) {
+                ROS_INFO("STL-MPC Integration: Ref_CTE: %.3f (orig: %.3f), Ref_Vel: %.3f (orig: %.3f)",
+                         adjusted_ref_cte, _ref_cte, adjusted_ref_vel, _ref_vel);
+            }
+        }
+
         ros::Time begin = ros::Time::now();
         vector<double> mpc_results = _tube_mpc.Solve(state, coeffs);
         ros::Time end = ros::Time::now();
@@ -434,6 +519,22 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         bool mpc_feasible = !mpc_results.empty();  // Check if MPC solve was successful
 
         cout << "MPC Solve Time: " << solve_time_ms << " ms, Feasible: " << mpc_feasible << endl;
+
+        // Terminal set feasibility check (P1-1)
+        if (mpc_feasible && _enable_terminal_set && _terminal_set_received)
+        {
+            // Extract terminal state from MPC prediction
+            // The terminal state is the last nominal state in the MPC horizon
+            VectorXd terminal_state = _tube_mpc.getNominalState();
+
+            // Check terminal feasibility
+            bool terminal_feasible = checkTerminalFeasibilityInLoop(terminal_state);
+
+            if (!terminal_feasible && _debug_info)
+            {
+                ROS_WARN("Terminal feasibility violated - MPC solution may not guarantee recursive feasibility");
+            }
+        }
 
         _w = mpc_feasible ? mpc_results[0] : 0.0;
         _throttle = mpc_feasible ? mpc_results[1] : 0.0;
@@ -687,6 +788,240 @@ void TubeMPCNode::printMetricsSummary()
         summary_file.close();
         ROS_INFO("Detailed summary written to /tmp/tube_mpc_summary.txt");
     }
+}
+
+// ============================================================================
+// STL Integration Callback Functions (P0-3)
+// ============================================================================
+
+void TubeMPCNode::stlRobustnessCB(const std_msgs::Float32::ConstPtr& msg)
+{
+    _current_stl_robustness = msg->data;
+
+    // Log occasionally for debugging
+    static int robustness_log_counter = 0;
+    if(robustness_log_counter++ % 50 == 0) {
+        ROS_INFO("STL Robustness: %.3f, Budget: %.3f, Violation: %s",
+                 _current_stl_robustness, _current_stl_budget,
+                 _current_stl_violation ? "YES" : "NO");
+    }
+}
+
+void TubeMPCNode::stlBudgetCB(const std_msgs::Float32::ConstPtr& msg)
+{
+    _current_stl_budget = msg->data;
+}
+
+void TubeMPCNode::stlViolationCB(const std_msgs::Bool::ConstPtr& msg)
+{
+    _current_stl_violation = msg->data;
+}
+
+void TubeMPCNode::adjustReferenceForSTL(double& ref_cte, double& ref_vel)
+{
+    /**
+     * STL-aware reference adjustment
+     *
+     * Strategy: When STL constraints are violated, adjust MPC references to:
+     * 1. Reduce cross-track error (move toward path center)
+     * 2. Adjust velocity based on budget and violation status
+     *
+     * This is a simplified approach that doesn't modify the CppAD cost function
+     * directly, but adjusts the reference values that MPC tries to track.
+     */
+
+    if (!_enable_stl_constraints) {
+        // STL not enabled, no adjustment
+        _stl_ref_cte_adjustment = 0.0;
+        _stl_ref_vel_adjustment = 0.0;
+        return;
+    }
+
+    _stl_ref_cte_adjustment = 0.0;
+    _stl_ref_vel_adjustment = 0.0;
+
+    // Only adjust if we have valid robustness data
+    if (_current_stl_robustness == 0.0 && _current_stl_budget == 0.0) {
+        // No STL data yet
+        return;
+    }
+
+    /**
+     * Case 1: STL Violation detected (negative robustness)
+     * Action: Adjust reference to improve STL satisfaction
+     */
+    if (_current_stl_violation || _current_stl_robustness < 0.0)
+    {
+        // Negative robustness means we're far from satisfying STL
+        // Adjust CTE reference to move more aggressively toward path
+        double violation_severity = std::abs(_current_stl_robustness);
+        _stl_ref_cte_adjustment = -_stl_weight * violation_severity * 0.1;
+
+        // Reduce velocity when violating to give more time for correction
+        _stl_ref_vel_adjustment = -_stl_weight * violation_severity * 0.05;
+    }
+
+    /**
+     * Case 2: Low budget (接近耗尽)
+     * Action: Be conservative, reduce speed
+     */
+    else if (_current_stl_budget < 0.3)
+    {
+        // Low budget: reduce velocity to avoid further violations
+        double budget_deficit = 0.3 - _current_stl_budget;
+        _stl_ref_vel_adjustment = -_stl_weight * budget_deficit * 0.1;
+
+        // Slightly tighten CTE tracking
+        _stl_ref_cte_adjustment = -_stl_weight * budget_deficit * 0.05;
+    }
+
+    /**
+     * Case 3: High budget + positive robustness (安全状态)
+     * Action: Can be more aggressive with tracking
+     */
+    else if (_current_stl_budget > 0.7 && _current_stl_robustness > 0.5)
+    {
+        // High safety margin: can focus on performance
+        // No adjustment needed, use standard references
+        _stl_ref_cte_adjustment = 0.0;
+        _stl_ref_vel_adjustment = 0.0;
+    }
+
+    // Apply adjustments to reference values
+    ref_cte += _stl_ref_cte_adjustment;
+    ref_vel += _stl_ref_vel_adjustment;
+
+    // Clamp to reasonable limits
+    ref_cte = std::max(-2.0, std::min(2.0, ref_cte));
+    ref_vel = std::max(0.1, std::min(_ref_vel * 1.5, ref_vel));
+
+    // Log adjustments occasionally
+    static int adjustment_log_counter = 0;
+    if (adjustment_log_counter++ % 100 == 0 &&
+        (std::abs(_stl_ref_cte_adjustment) > 0.01 || std::abs(_stl_ref_vel_adjustment) > 0.01))
+    {
+        ROS_INFO("STL Reference Adjustment: CTE: %.3f, Vel: %.3f (Robustness: %.3f, Budget: %.3f)",
+                 _stl_ref_cte_adjustment, _stl_ref_vel_adjustment,
+                 _current_stl_robustness, _current_stl_budget);
+    }
+}
+
+// Terminal set callback functions (P1-1)
+
+void TubeMPCNode::terminalSetCB(const std_msgs::Float64MultiArray::ConstPtr& msg)
+{
+    /**
+     * Terminal set callback
+     *
+     * Receives terminal set information from dr_tightening node
+     * Message format: [x_center, y_center, theta_center, v_center, cte_center, etheta_center, radius]
+     */
+
+    if (!_enable_terminal_set) {
+        return;
+    }
+
+    // Check message size
+    if (msg->data.size() < 7) {
+        ROS_WARN("Invalid terminal set message size: %zu (expected >= 7)", msg->data.size());
+        return;
+    }
+
+    // Extract terminal set center [6D state]
+    for (int i = 0; i < 6; i++) {
+        _terminal_set_center(i) = msg->data[i];
+    }
+
+    // Extract terminal set radius
+    _terminal_set_radius = msg->data[6];
+
+    // Update TubeMPC with terminal set
+    _tube_mpc.setTerminalSet(_terminal_set_center, _terminal_set_radius);
+
+    _terminal_set_received = true;
+
+    // Log terminal set updates
+    static int terminal_log_counter = 0;
+    if (terminal_log_counter++ % 20 == 0) {
+        ROS_INFO("Terminal Set Updated: center=[%.2f,%.2f,%.2f], radius=%.2f",
+                 _terminal_set_center(0), _terminal_set_center(1),
+                 _terminal_set_center(2), _terminal_set_radius);
+    }
+
+    // Publish visualization
+    visualizeTerminalSet();
+}
+
+void TubeMPCNode::visualizeTerminalSet()
+{
+    if (!_enable_terminal_set || !_terminal_set_received) {
+        return;
+    }
+
+    visualization_msgs::Marker marker;
+    marker.header.frame_id = _odom_frame;
+    marker.header.stamp = ros::Time::now();
+    marker.ns = "terminal_set";
+    marker.id = 0;
+    marker.type = visualization_msgs::Marker::CYLINDER;
+    marker.action = visualization_msgs::Marker::ADD;
+
+    // Position (use x, y from terminal set center)
+    marker.pose.position.x = _terminal_set_center(0);
+    marker.pose.position.y = _terminal_set_center(1);
+    marker.pose.position.z = 0.0;
+
+    // Orientation (use theta from terminal set center)
+    tf::Quaternion q;
+    q.setRPY(0, 0, _terminal_set_center(2));
+    marker.pose.orientation.x = q.x();
+    marker.pose.orientation.y = q.y();
+    marker.pose.orientation.z = q.z();
+    marker.pose.orientation.w = q.w();
+
+    // Scale (use radius as diameter)
+    marker.scale.x = 2.0 * _terminal_set_radius;
+    marker.scale.y = 2.0 * _terminal_set_radius;
+    marker.scale.z = 0.1;  // Thin cylinder
+
+    // Color (red with transparency)
+    marker.color.r = 1.0;
+    marker.color.g = 0.0;
+    marker.color.b = 0.0;
+    marker.color.a = 0.3;
+
+    marker.lifetime = ros::Duration(1.0);  // 1 second lifetime
+
+    _pub_terminal_set_viz.publish(marker);
+}
+
+bool TubeMPCNode::checkTerminalFeasibilityInLoop(const VectorXd& terminal_state)
+{
+    /**
+     * Check terminal feasibility in control loop
+     *
+     * Returns true if terminal state is feasible, false otherwise
+     * Increments violation counter and logs warnings
+     */
+
+    if (!_enable_terminal_set || !_terminal_set_received) {
+        return true;  // No terminal constraint
+    }
+
+    bool feasible = _tube_mpc.checkTerminalFeasibility(terminal_state);
+
+    if (!feasible) {
+        _terminal_set_violation_count++;
+
+        // Log violation warnings occasionally
+        static int violation_log_counter = 0;
+        if (violation_log_counter++ % 10 == 0) {
+            ROS_WARN("Terminal feasibility violation #%d: Total violations: %d",
+                     violation_log_counter, _terminal_set_violation_count);
+        }
+    }
+
+    return feasible;
 }
 
 int main(int argc, char **argv)
