@@ -129,6 +129,11 @@ private:
     void loadParameters();
 
     /**
+     * @brief Load and set MPC parameters
+     */
+    bool loadAndSetMPCParameters();
+
+    /**
      * @brief Initialize MPC solver
      */
     bool initializeMPC();

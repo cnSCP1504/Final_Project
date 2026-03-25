@@ -141,16 +141,38 @@ bool SafeRegretMPC::solve(const VectorXd& current_state,
                   << ", budget: " << stl_budget_ << std::endl;
     }
 
-    // Initialize optimization variables
+    // Initialize optimization variables along reference trajectory for better warm start
     std::vector<double> vars((state_dim_ + input_dim_) * (mpc_steps_ + 1), 0.0);
 
-    // Set initial state
-    for (size_t i = 0; i < state_dim_; ++i) {
-        vars[i] = current_state(i);
+    // Initialize states along reference trajectory
+    for (size_t t = 0; t <= mpc_steps_; ++t) {
+        size_t idx = t * (state_dim_ + input_dim_);
+
+        if (t == 0) {
+            // First state is current state
+            for (size_t i = 0; i < state_dim_; ++i) {
+                vars[idx + i] = current_state(i);
+            }
+        } else if (t < reference_trajectory.size()) {
+            // Use reference trajectory if available
+            for (size_t i = 0; i < state_dim_; ++i) {
+                vars[idx + i] = reference_trajectory[t](i);
+            }
+        } else {
+            // Repeat last reference state
+            for (size_t i = 0; i < state_dim_; ++i) {
+                vars[idx + i] = reference_trajectory.back()(i);
+            }
+        }
+
+        // Initialize inputs to small forward velocity
+        if (t < mpc_steps_) {
+            vars[idx + state_dim_] = 0.1;  // Small linear velocity
+            vars[idx + state_dim_ + 1] = 0.0;  // Zero angular velocity
+        }
     }
 
-    // TODO: Solve with actual Ipopt
-    // For now, use simple heuristic solution
+    // Solve with Ipopt solver (implemented in SafeRegretMPCSolver.cpp)
     bool solve_success = solveWithIpopt(vars);
 
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -174,9 +196,6 @@ bool SafeRegretMPC::solve(const VectorXd& current_state,
 
     return solve_success;
 }
-
-// Note: Ipopt solver implementation moved to SafeRegretMPCSolver.cpp
-// This function is now implemented there as part of SafeRegretMPCTNLP class
 
 VectorXd SafeRegretMPC::getOptimalControl() const {
     return optimal_control_;

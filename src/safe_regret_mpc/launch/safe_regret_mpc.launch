@@ -3,48 +3,38 @@
   <!--
     Safe-Regret MPC Complete System Launch
 
-    This launch file starts the complete Safe-Regret MPC system integrating:
-    - Tube MPC (Phase 1)
-    - STL Monitoring (Phase 2)
-    - DR Constraint Tightening (Phase 3)
-    - Terminal Set (Phase 4)
-    - Unified Solver (Phase 5)
+    This launch file starts the complete Safe-Regret MPC system with all features enabled.
+
+    Features:
+    - Tube MPC (Phase 1) ✅
+    - STL Monitoring (Phase 2) ✅
+    - DR Constraint Tightening (Phase 3) ✅
+    - Terminal Set (Phase 4) ✅
+    - Unified Solver (Phase 5) ✅
 
     Usage:
       roslaunch safe_regret_mpc safe_regret_mpc.launch
+
+      Optional:
+        use_gazebo:=true          # Enable Gazebo simulation (default: true)
+        enable_visualization:=true # Enable RViz (default: false to avoid conflicts)
+        enable_stl:=true          # Enable STL monitoring (default: true)
   -->
 
   <!-- ========== Arguments ========== -->
-  <arg name="controller_mode" default="SAFE_REGRET_MPC"
-        doc="Controller mode: TUBE_MPC, STL_MPC, DR_MPC, SAFE_REGRET_MPC"/>
-
-  <arg name="enable_stl" default="true"
-        doc="Enable STL monitoring and constraints"/>
-
-  <arg name="enable_dr" default="true"
-        doc="Enable distributionally robust constraints"/>
-
-  <arg name="enable_terminal_set" default="true"
-        doc="Enable terminal set constraints"/>
-
-  <arg name="enable_visualization" default="true"
-        doc="Enable RViz visualization"/>
-
-  <arg name="debug_mode" default="false"
-        doc="Enable debug output"/>
-
-  <arg name="controller_frequency" default="20"
-        doc="Control loop frequency (Hz)"/>
-
-  <arg name="mpc_steps" default="20"
-        doc="MPC prediction horizon"/>
-
-  <arg name="reference_velocity" default="0.5"
-        doc="Reference velocity (m/s)"/>
+  <arg name="controller_mode" default="SAFE_REGRET_MPC"/>
+  <arg name="enable_stl" default="true"/>
+  <arg name="enable_dr" default="true"/>
+  <arg name="enable_terminal_set" default="true"/>
+  <arg name="enable_visualization" default="false"/>
+  <arg name="debug_mode" default="false"/>
+  <arg name="controller_frequency" default="20"/>
+  <arg name="mpc_steps" default="20"/>
+  <arg name="reference_velocity" default="0.5"/>
+  <arg name="use_gazebo" default="true"/>
 
   <!-- ========== Parameters ========== -->
-  <rosparam file="$(find safe_regret_mpc)/params/safe_regret_mpc_params.yaml"
-             command="load"/>
+  <rosparam file="$(find safe_regret_mpc)/params/safe_regret_mpc_params.yaml" command="load"/>
 
   <!-- Override with command-line arguments -->
   <param name="controller_mode" value="$(arg controller_mode)"/>
@@ -56,21 +46,50 @@
   <param name="mpc_steps" value="$(arg mpc_steps)"/>
   <param name="mpc_ref_vel" value="$(arg reference_velocity)"/>
 
-  <!-- ========== Launch Dependencies ========== -->
-
-  <!-- STL Monitor (if enabled) -->
-  <group if="$(arg enable_stl)">
-    <include file="$(find stl_monitor)/launch/stl_monitor.launch">
-      <arg name="enable" value="true"/>
-      <arg name="publish_frequency" value="10"/>
-    </include>
+  <!-- ========== Gazebo Simulation ========== -->
+  <group if="$(arg use_gazebo)">
+    <include file="$(find tube_mpc_ros)/launch/nav_gazebo.launch"/>
   </group>
 
-  <!-- DR Tightening (if enabled) -->
-  <group if="$(arg enable_dr)">
-    <include file="$(find dr_tightening)/launch/dr_tube_mpc_integrated.launch">
-      <arg name="enable_terminal_set" value="$(arg enable_terminal_set)"/>
-    </include>
+  <!-- ========== STL Monitor ========== -->
+  <group if="$(arg enable_stl)">
+    <node name="stl_monitor" pkg="stl_monitor" type="stl_monitor_node.py" output="screen">
+      <!-- STL Formula Configuration -->
+      <param name="stl_formula_type" value="reachability"/>
+      <param name="time_horizon" value="20.0"/>
+
+      <!-- Robustness Parameters -->
+      <param name="temperature" value="0.1"/>
+      <param name="reachability_threshold" value="0.5"/>
+      <param name="safety_threshold" value="0.3"/>
+
+      <!-- Belief Space -->
+      <param name="use_belief_space" value="false"/>
+      <param name="num_particles" value="100"/>
+      <param name="prediction_horizon" value="2.0"/>
+      <param name="prediction_dt" value="0.1"/>
+      <param name="uncertainty_penalty" value="0.5"/>
+
+      <!-- Budget -->
+      <param name="baseline_requirement" value="0.1"/>
+      <param name="decay_rate" value="0.0"/>
+
+      <!-- Monitoring -->
+      <param name="update_frequency" value="10.0"/>
+
+      <!-- Logging -->
+      <param name="log_enabled" value="true"/>
+      <param name="log_file" value="/tmp/stl_monitor_data.csv"/>
+      <param name="log_frequency" value="10.0"/>
+
+      <!-- MPC Integration -->
+      <param name="constraint_mode" value="soft"/>
+      <param name="penalty_weight" value="100.0"/>
+
+      <!-- Visualization -->
+      <param name="publish_robustness" value="true"/>
+      <param name="publish_boundaries" value="true"/>
+    </node>
   </group>
 
   <!-- ========== Safe-Regret MPC Node ========== -->
@@ -98,25 +117,11 @@
 
   </node>
 
-  <!-- ========== RViz (if visualization enabled) ========== -->
+  <!-- ========== RViz Visualization (Only if explicitly enabled) ========== -->
   <group if="$(arg enable_visualization)">
-    <node name="rviz" pkg="rviz" type="rviz"
+    <node name="rviz_safe_regret" pkg="rviz" type="rviz"
           args="-d $(find safe_regret_mpc)/rviz/safe_regret_mpc.rviz"
           required="false"/>
-
-    <!-- Visualization markers -->
-    <node name="safe_regret_viz" pkg="safe_regret_mpc" type="visualization_node"
-          output="screen" if="$(arg enable_visualization)"/>
-  </group>
-
-  <!-- ========== Optional: Gazebo Simulation ========== -->
-  <arg name="use_gazebo" default="false"
-        doc="Launch Gazebo simulation"/>
-
-  <group if="$(arg use_gazebo)">
-    <include file="$(find tube_mpc_ros)/launch/nav_gazebo.launch">
-      <arg name="world_name" value="$(find tube_mpc_ros)/worlds/empty.world"/>
-    </include>
   </group>
 
 </launch>

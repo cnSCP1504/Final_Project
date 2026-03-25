@@ -39,6 +39,12 @@ bool SafeRegretMPCNode::initialize() {
         return false;
     }
 
+    // Load and set MPC matrices and constraints
+    if (!loadAndSetMPCParameters()) {
+        ROS_ERROR("Failed to load and set MPC parameters!");
+        return false;
+    }
+
     // Subscribers
     sub_odom_ = nh_.subscribe("odom", 1, &SafeRegretMPCNode::odomCallback, this);
     sub_global_plan_ = nh_.subscribe("global_plan", 1,
@@ -114,6 +120,114 @@ void SafeRegretMPCNode::loadParameters() {
     private_nh_.param<std::string>("robot_base_frame", robot_base_frame_, "base_link");
 
     private_nh_.param("enable_visualization", enable_visualization_, true);
+}
+
+bool SafeRegretMPCNode::loadAndSetMPCParameters() {
+    ROS_INFO("Loading MPC parameters...");
+
+    // Load system dynamics matrices
+    Eigen::MatrixXd A(6, 6), B(6, 2), G(6, 2);
+    std::vector<double> A_vec, B_vec, G_vec;
+
+    if (nh_.getParam("dynamics/A", A_vec) && A_vec.size() == 36) {
+        for (int i = 0; i < 6; ++i) {
+            for (int j = 0; j < 6; ++j) {
+                A(i, j) = A_vec[i * 6 + j];
+            }
+        }
+    } else {
+        ROS_WARN("Failed to load A matrix, using identity");
+        A = Eigen::MatrixXd::Identity(6, 6);
+    }
+
+    if (nh_.getParam("dynamics/B", B_vec) && B_vec.size() == 12) {
+        for (int i = 0; i < 6; ++i) {
+            for (int j = 0; j < 2; ++j) {
+                B(i, j) = B_vec[i * 2 + j];
+            }
+        }
+    } else {
+        ROS_WARN("Failed to load B matrix, using zeros");
+        B = Eigen::MatrixXd::Zero(6, 2);
+    }
+
+    if (nh_.getParam("dynamics/G", G_vec) && G_vec.size() == 12) {
+        for (int i = 0; i < 6; ++i) {
+            for (int j = 0; j < 2; ++j) {
+                G(i, j) = G_vec[i * 2 + j];
+            }
+        }
+    } else {
+        ROS_WARN("Failed to load G matrix, using zeros");
+        G = Eigen::MatrixXd::Zero(6, 2);
+    }
+
+    mpc_solver_->setSystemDynamics(A, B, G);
+
+    // Load cost matrices
+    Eigen::MatrixXd Q(6, 6), R(2, 2);
+    std::vector<double> Q_vec, R_vec;
+
+    if (nh_.getParam("cost/Q", Q_vec) && Q_vec.size() == 6) {
+        Q = Eigen::VectorXd::Map(Q_vec.data(), 6).asDiagonal();
+    } else {
+        ROS_WARN("Failed to load Q matrix, using identity");
+        Q = Eigen::MatrixXd::Identity(6, 6);
+    }
+
+    if (nh_.getParam("cost/R", R_vec) && R_vec.size() == 2) {
+        R = Eigen::VectorXd::Map(R_vec.data(), 2).asDiagonal();
+    } else {
+        ROS_WARN("Failed to load R matrix, using identity");
+        R = Eigen::MatrixXd::Identity(2, 2);
+    }
+
+    mpc_solver_->setCostWeights(Q, R);
+
+    // Load constraints
+    Eigen::VectorXd x_min(6), x_max(6), u_min(2), u_max(2);
+    std::vector<double> x_min_vec, x_max_vec, u_min_vec, u_max_vec;
+
+    if (nh_.getParam("constraints/x_min", x_min_vec) && x_min_vec.size() == 6) {
+        x_min = Eigen::VectorXd::Map(x_min_vec.data(), 6);
+    } else {
+        ROS_WARN("Failed to load x_min, using default");
+        x_min << -10.0, -10.0, -3.14159, 0.0, -1.0, -0.5;
+    }
+
+    if (nh_.getParam("constraints/x_max", x_max_vec) && x_max_vec.size() == 6) {
+        x_max = Eigen::VectorXd::Map(x_max_vec.data(), 6);
+    } else {
+        ROS_WARN("Failed to load x_max, using default");
+        x_max << 10.0, 10.0, 3.14159, 1.0, 1.0, 0.5;
+    }
+
+    if (nh_.getParam("constraints/u_min", u_min_vec) && u_min_vec.size() == 2) {
+        u_min = Eigen::VectorXd::Map(u_min_vec.data(), 2);
+    } else {
+        ROS_WARN("Failed to load u_min, using default");
+        u_min << 0.0, -1.5;
+    }
+
+    if (nh_.getParam("constraints/u_max", u_max_vec) && u_max_vec.size() == 2) {
+        u_max = Eigen::VectorXd::Map(u_max_vec.data(), 2);
+    } else {
+        ROS_WARN("Failed to load u_max, using default");
+        u_max << 1.0, 1.5;
+    }
+
+    mpc_solver_->setConstraints(x_min, x_max, u_min, u_max);
+
+    // Set horizon
+    mpc_solver_->setHorizon(mpc_steps_);
+
+    // Enable/disable features based on parameters
+    mpc_solver_->enableSTLConstraints(stl_enabled_);
+    mpc_solver_->enableDRConstraints(dr_enabled_);
+    mpc_solver_->enableTerminalSet(terminal_set_enabled_);
+
+    ROS_INFO("MPC parameters loaded successfully");
+    return true;
 }
 
 // ========== Callbacks ==========
