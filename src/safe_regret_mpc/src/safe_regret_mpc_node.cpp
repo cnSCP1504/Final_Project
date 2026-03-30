@@ -57,7 +57,11 @@ bool SafeRegretMPCNode::initialize() {
     }
 
     if (dr_enabled_) {
-        sub_dr_margins_ = nh_.subscribe("dr_margins", 1,
+        // Subscribe to raw Float64MultiArray from dr_tightening node
+        sub_dr_margins_raw_ = nh_.subscribe("dr_margins", 1,
+                                            &SafeRegretMPCNode::drMarginsRawCallback, this);
+        // Also subscribe to DRMargins if available (for compatibility)
+        sub_dr_margins_ = nh_.subscribe("dr_margins_alt", 1,
                                        &SafeRegretMPCNode::drMarginsCallback, this);
         sub_terminal_set_ = nh_.subscribe("terminal_set", 1,
                                          &SafeRegretMPCNode::terminalSetCallback, this);
@@ -259,6 +263,67 @@ void SafeRegretMPCNode::stlRobustnessCallback(
     if (debug_mode_) {
         ROS_DEBUG("STL robustness: %.3f, budget: %.3f",
                   msg->robustness_value, msg->budget);
+    }
+}
+
+void SafeRegretMPCNode::drMarginsRawCallback(
+    const std_msgs::Float64MultiArray::ConstPtr& msg) {
+    // Convert Float64MultiArray to DRMargins message
+    safe_regret_mpc::DRMargins dr_msg;
+    dr_msg.header.stamp = ros::Time::now();
+
+    // Fill margins
+    dr_msg.margins = msg->data;
+
+    // Fill other fields with default values
+    dr_msg.means.clear();
+    dr_msg.stds.clear();
+    dr_msg.cantelli_factors.clear();
+    for (size_t i = 0; i < msg->data.size(); ++i) {
+        dr_msg.means.push_back(0.0);
+        dr_msg.stds.push_back(msg->data[i]);
+        dr_msg.cantelli_factors.push_back(1.0);
+    }
+
+    // Risk allocation
+    dr_msg.total_risk = 0.1;
+    dr_msg.risk_allocation.clear();
+    dr_msg.allocation_method = "uniform";
+
+    // Ambiguity set
+    dr_msg.ambiguity_type = "wasserstein";
+    dr_msg.ambiguity_radius = 0.1;
+    dr_msg.sample_count = 200;
+
+    // Residual statistics
+    dr_msg.residual_mean.clear();
+    dr_msg.residual_std.clear();
+    dr_msg.residual_bounds.clear();
+    for (int i = 0; i < 3; ++i) {
+        dr_msg.residual_mean.push_back(0.0);
+        dr_msg.residual_std.push_back(0.1);
+        dr_msg.residual_bounds.push_back(0.5);
+    }
+
+    // Tube compensation
+    dr_msg.tube_radius = 0.5;
+    dr_msg.tube_offset = 0.1;
+    dr_msg.tube_compensation = 0.1;
+
+    // Confidence
+    dr_msg.confidence_level = 0.9;
+    dr_msg.safety_margin = 1.0;
+
+    // Computational info
+    dr_msg.computation_time = 1.0;
+    dr_msg.iterations = 1;
+    dr_msg.converged = true;
+
+    dr_info_ = dr_msg;
+    dr_received_ = true;
+
+    if (debug_mode_) {
+        ROS_DEBUG("DR margins (raw) received, count: %lu", msg->data.size());
     }
 }
 

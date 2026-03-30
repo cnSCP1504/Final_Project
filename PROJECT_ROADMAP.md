@@ -257,6 +257,10 @@
   - [x] SafeRegretMPCNode - ROS节点 (70%)
 
 - [ ] **性能优化** (待完成)
+  - [ ] **实时性能提升**
+    - [ ] 控制频率优化：20Hz → 50Hz
+    - [ ] 求解时间优化：目标 < 8ms @ median
+    - [ ] 参数调整：`controller_frequency: 50`
   - [ ] 热启动策略
   - [ ] 多线程（STL评估、DR校准）
   - [ ] 代码优化（向量化、内存池）
@@ -278,25 +282,26 @@
 **目标**: 论文实验复现与性能评估
 
 #### 任务清单
-- [ ] **任务T1：协作装配**
-  - [ ] Gazebo仿真环境搭建
-  - [ ] STL规范：φ_asm
-  - [ ] 人员避障 predicates
-  - [ ] 抓取/放置监控
-  - **位置**: `src/tube_mpc_ros/tasks/task_assembly/`
-
 - [ ] **任务T2：物流运输**
   - [ ] 部分已知地图生成
   - [ ] STL规范：φ_log
   - [ ] 碰撞避免
   - [ ] 电池监控
-  - **位置**: `src/tube_mpc_ros/tasks/task_logistics/`
+  - **测试地图文件**（test_world）：
+    - Gazebo世界: `src/tube_mpc_ros/mpc_ros/worlds/test_world.world`
+    - 地图配置: `src/tube_mpc_ros/mpc_ros/map/test_world.yaml`
+    - 地图图像: `src/tube_mpc_ros/mpc_ros/map/test_world.pgm`
+  - **测试启动文件**: `src/safe_regret_mpc/launch/safe_regret_mpc_test.launch`
+    - *说明：启动该文件会自动加载所有相关依赖，包括导航和仿真环境*
 
 - [ ] **基线对比**
-  - [ ] B1: 标称STL-MPC
-  - [ ] B2: DR-MPC（无STL）
-  - [ ] B3: CBF盾 + MPC
-  - [ ] B4: PID跟踪
+  - **对比基准**: 完整Safe-Regret MPC系统（Phase 1-5集成完成）
+    - ✅ Tube MPC + STL优化 + DR约束 + 终端集 + 遗憾分析
+    - 测试启动: `src/safe_regret_mpc/launch/safe_regret_mpc_test.launch`
+  - [ ] B1: 标称STL-MPC（无DR约束）
+  - [ ] B2: DR-MPC（无STL，二次跟踪目标）
+  - [ ] B3: CBF盾 + 标称MPC（无遗憾分析）
+  - [ ] B4: PID跟踪（传统控制器）
 
 - [ ] **消融实验**
   - [ ] 无鲁棒性预算
@@ -312,11 +317,60 @@
   - [ ] 计算时间统计
   - **位置**: `scripts/evaluation/`
 
+- [ ] **实验协议设计**
+  - [ ] **仿真实验**：30次随机种子实验
+    - 随机化地图遮挡和初始条件
+    - 记录每次实验的完整ROS bag数据
+  - [ ] **物理实验**：3次重复实验（可选）
+    - 相同初始条件下的重复性验证
+    - 遵循机构安全规范
+  - [ ] **噪声鲁棒性测试**：Mid-episode分布偏移
+    - 传感器故障率变化
+    - 动力学噪声参数切换
+  - **位置**: `test/experiments/protocol/`
+
+- [ ] **系统性能参数配置**
+  - [ ] **控制频率**：50Hz（移动机器人）
+    - 当前：20Hz → 目标：50Hz
+    - 参数：`controller_frequency: 50`
+  - [ ] **求解时间约束**：8ms求解预算
+    - MPC求解器最大运行时间
+    - 监控：median, p90, 失败次数
+  - [ ] **实时监控指标**
+    - 求解时间分布（目标：<8ms @ p90）
+    - 递归可行性率（目标：>95%）
+    - 内存占用监控
+
+- [ ] **数据收集与版本管理**
+  - [ ] **ROS bag记录规范**
+    - 记录主题：`/belief`, `/dr_margins`, `/stl_robustness`, `/cmd_vel`, `/mpc_trajectory`
+    - 记录频率：与控制频率同步（50Hz）
+    - 文件命名：`{task}_{method}_{seed}_{timestamp}.bag`
+  - [ ] **Git commit hash跟踪**
+    - 每次实验记录当前commit hash
+    - 自动生成实验元数据文件：`experiment_metadata.yaml`
+    - 包含：commit hash, 分支, 参数配置, 时间戳
+  - [ ] **后处理脚本**
+    - 从ROS bag重新计算精确鲁棒性ρ
+    - 生成评估指标报告
+    - 可视化：轨迹、管边界、鲁棒性时间序列
+  - **位置**: `scripts/data_collection/`
+
+**快速启动测试**:
+```bash
+# 启动Safe-Regret MPC完整测试系统
+roslaunch safe_regret_mpc safe_regret_mpc_test.launch
+```
+*说明：该启动文件会自动加载所有相关依赖，包括导航环境、仿真器和MPC控制器*
+
 **验证目标**:
 - 满足概率 > 90% (δ=0.1)
 - 风险校准误差 < 10%
 - 遗憾增长率 o(T)验证
-- 实时性：>50Hz稳定运行
+- 实时性：**50Hz稳定运行**（当前20Hz → 目标50Hz）
+- 求解性能：**8ms求解预算**（median < 8ms, p90 < 10ms）
+- 递归可行性率 > 95%
+- 实验重复性：30 seeds × 4方法 = 120次仿真实验
 
 ---
 

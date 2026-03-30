@@ -79,7 +79,12 @@ private:
     void stlRobustnessCallback(const safe_regret_mpc::STLRobustness::ConstPtr& msg);
 
     /**
-     * @brief DR margins callback (from DR tightening)
+     * @brief DR margins callback (from DR tightening) - Float64MultiArray version
+     */
+    void drMarginsRawCallback(const std_msgs::Float64MultiArray::ConstPtr& msg);
+
+    /**
+     * @brief DR margins callback (from DR tightening) - DRMargins version
      */
     void drMarginsCallback(const safe_regret_mpc::DRMargins::ConstPtr& msg);
 
@@ -194,6 +199,7 @@ private:
     ros::Subscriber sub_global_plan_;
     ros::Subscriber sub_goal_;
     ros::Subscriber sub_stl_robustness_;
+    ros::Subscriber sub_dr_margins_raw_;
     ros::Subscriber sub_dr_margins_;
     ros::Subscriber sub_terminal_set_;
 

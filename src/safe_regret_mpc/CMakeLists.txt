@@ -150,6 +150,12 @@ install(DIRECTORY rviz/
   FILES_MATCHING PATTERN "*.rviz"
 )
 
+## Install scripts
+install(DIRECTORY scripts/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/scripts
+  USE_SOURCE_PERMISSIONS
+)
+
 ## Testing (disabled for now - no test files)
 # if(CATKIN_ENABLE_TESTING)
 #   find_package(rostest REQUIRED)

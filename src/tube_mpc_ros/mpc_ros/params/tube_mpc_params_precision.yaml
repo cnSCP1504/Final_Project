@@ -1,0 +1,74 @@
+MPCPlannerROS:
+  global_path_topic: /move_base/MPCPlannerROS/global_plan
+  map_frame: map
+  odom_frame: odom
+  base_frame: base_footprint
+
+  # ========== 速度限制（精确模式） ==========
+  min_trans_vel: 0.05      # 降低最小速度：0.1 → 0.05
+  max_vel_x: 0.8           # 降低最大速度：1.5 → 0.8
+  min_vel_x: -0.05
+  max_vel_y: 0.0
+  min_vel_y: 0.0
+  trans_stopped_vel: 0.05
+  max_rot_vel: 1.5         # 降低最大角速度：2.5 → 1.5
+  min_rot_vel: 0.05
+  rot_stopped_vel: 0.05
+
+  # ========== 加速度限制（精确控制） ==========
+  acc_lim_x: 1.5           # 大幅降低线加速度：3.0 → 1.5
+  acc_lim_theta: 2.0       # 大幅降低角加速度：4.0 → 2.0
+  acc_lim_y: 0.0
+
+  # ========== 目标容差（高精度） ==========
+  yaw_goal_tolerance: 0.2  # 严格容差：0.5 → 0.2
+  xy_goal_tolerance: 0.15  # 严格容差：0.3 → 0.15
+  latch_xy_goal_tolerance: false
+
+  # ========== 路径跟随权重 ==========
+  path_distance_bias: 40.0 # 提高路径跟随权重：32 → 40
+  goal_distance_bias: 20.0
+  occdist_scale: 0.02
+  forward_point_distance: 0.3  # 缩短前瞻距离：0.4 → 0.3
+  stop_time_buffer: 0.3    # 增加停止缓冲：0.2 → 0.3
+  scaling_speed: 0.25
+  max_scaling_factor: 0.2
+  oscillation_reset_dist: 0.05
+
+  # ========== 可视化 ==========
+  publish_traj_pc: true
+  publish_cost_grid_pc: true
+  debug_info: true
+
+  # ========== MPC核心参数（精确版） ==========
+  max_speed: 0.6           # 降低最大速度：1.0 → 0.6
+  waypoints_dist: -1.0
+  path_length: 12.0        # 增加路径长度：8.0 → 12.0
+  controller_freq: 30      # 大幅提高控制频率：10 → 30
+  mpc_steps: 30           # 增加预测步数：20 → 30
+
+  # ========== 参考值 ==========
+  mpc_ref_cte: 0.0
+  mpc_ref_vel: 0.5        # 降低参考速度：0.8 → 0.5
+  mpc_ref_etheta: 0.0
+
+  # ========== 代价函数权重（精确跟踪） ==========
+  mpc_w_cte: 80.0         # 大幅提高横向误差权重：50 → 80
+  mpc_w_etheta: 100.0     # 大幅提高航向权重：60 → 100
+  mpc_w_vel: 15.0         # 提高速度权重：5 → 15（稳定速度）
+  mpc_w_angvel: 50.0      # 提高角速度权重：30 → 50
+  mpc_w_angvel_d: 50.0
+  mpc_w_accel: 20.0       # 大幅提高加速度权重：10 → 20
+  mpc_w_accel_d: 15.0     # 大幅提高加速度变化权重：5 → 15
+
+  # ========== 控制约束 ==========
+  mpc_max_angvel: 1.5     # 严格限制角速度：2.0 → 1.5
+  mpc_max_throttle: 5.0   # 严格限制throttle：10.0 → 5.0
+  mpc_bound_value: 1.0e3
+
+  # ========== 扰动与管控制 ==========
+  disturbance_bound: 0.10 # 降低扰动估计：0.15 → 0.10
+  enable_adaptive_disturbance: true
+  disturbance_window_size: 150  # 增加窗口大小：100 → 150
+  tube_visualization: true
+  error_feedback_gain: 0.4  # 降低反馈增益：0.6 → 0.4（更稳定）

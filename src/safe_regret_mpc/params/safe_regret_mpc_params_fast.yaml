@@ -1,0 +1,145 @@
+# Safe-Regret MPC Parameters - Fast Mode
+# 高速运输，快速到达
+
+# ========== System Configuration ==========
+system:
+  mode: "SAFE_REGRET_MPC"
+  controller_frequency: 20.0
+  publish_frequency: 10.0
+  debug_mode: false
+
+# ========== MPC Parameters ==========
+mpc:
+  horizon: 20
+  ref_vel: 1.0                 # 提高参考速度：0.5 → 1.0
+  max_angvel: 2.2             # 提高最大角速度
+
+  # Cost weights (优先速度)
+  w_cte: 10.0                 # 保持横向误差权重
+  w_etheta: 10.0              # 保持航向权重
+  w_vel: 3.0                  # 降低速度权重（优先速度）：5 → 3
+  w_angvel: 8.0               # 降低角速度权重：10 → 8
+  w_accel: 5.0                # 降低加速度权重：5 → 5
+  w_stl: 10.0
+
+  # Constraints
+  max_cte: 1.2                # 放宽容差
+  max_etheta: 0.6             # 放宽容差
+
+# ========== 其他配置保持不变 ==========
+stl:
+  enabled: true
+  formula: "G[0,T](safety) & F[0,10](goal)"
+  baseline: 0.1
+  initial_budget: 1.0
+  temperature: 0.05
+  num_particles: 100
+  belief_covariance: [0.1, 0.0, 0.0, 0.0,
+                       0.0, 0.1, 0.0, 0.0,
+                       0.0, 0.0, 0.05, 0.0,
+                       0.0, 0.0, 0.0, 0.01]
+  evaluation_horizon: 10
+  gradient_eps: 1e-6
+
+dr:
+  enabled: true
+  risk_level: 0.1
+  risk_allocation: "uniform"
+  confidence_level: 0.9
+  ambiguity_type: "chebyshev"
+  ambiguity_radius: 0.1
+  window_size: 200
+  min_samples: 50
+  lipschitz_const: 1.0
+  tube_compensation: 0.1
+
+terminal_set:
+  enabled: true
+  computation_method: "lqr"
+  max_iterations: 50
+  convergence_tolerance: 1e-6
+  terminal_constraint_weight: 1000.0
+  terminal_feasibility_tolerance: 0.1
+  x_min: -5.0
+  x_max: 5.0
+  y_min: -5.0
+  y_max: 5.0
+  theta_min: -3.14159
+  theta_max: 3.14159
+  v_min: 0.0
+  v_max: 1.2                   # 提高最大速度
+  update_frequency: 0.2
+
+regret:
+  enabled: true
+  max_history: 10000
+  oracle_costs: []
+  theoretical_bound_coef: 2.0
+
+performance:
+  enabled: true
+  max_history: 1000
+  log_to_file: true
+  log_filename: "/tmp/safe_regret_mpc_performance.csv"
+  log_frequency: 1.0
+
+dynamics:
+  state_dim: 6
+  input_dim: 2
+  disturbance_dim: 2
+  dt: 0.1
+  A: [1.0, 0.0, 0.0, 0.1, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0, 0.1, 0.0,
+      0.0, 0.0, 1.0, 0.0, 0.0, 0.1,
+      0.0, 0.0, 0.0, 0.9, 0.0, 0.0,
+      0.0, 0.0, 0.0, 0.0, 0.95, 0.0,
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.95]
+  B: [0.0, 0.0,
+      0.0, 0.0,
+      0.1, 0.0,
+      0.9, 0.0,
+      0.0, 0.0,
+      0.0, 0.1]
+  G: [0.01, 0.0,
+      0.0, 0.01,
+      0.0, 0.0,
+      0.05, 0.0,
+      0.0, 0.05,
+      0.0, 0.0]
+
+cost:
+  Q: [1.0, 1.0, 1.0, 1.0, 10.0, 10.0]
+  R: [1.0, 1.0]
+
+constraints:
+  x_min: [-10.0, -10.0, -3.14159, 0.0, -1.0, -0.5]
+  x_max: [10.0, 10.0, 3.14159, 1.2, 1.0, 0.5]
+  u_min: [0.0, -2.0]
+  u_max: [1.2, 2.0]
+
+topics:
+  odom: "/odom"
+  global_plan: "/move_base/TrajectoryPlannerROS/global_plan"
+  goal: "/move_base_simple/goal"
+  stl_robustness: "/stl_monitor/robustness"
+  dr_margins: "/dr_margins"
+  terminal_set: "/dr_terminal_set"
+  cmd_vel: "/cmd_vel"
+  system_state: "/safe_regret_mpc/state"
+  metrics: "/safe_regret_mpc/metrics"
+  mpc_trajectory: "/mpc_trajectory"
+  tube_boundaries: "/tube_boundaries"
+
+frames:
+  global_frame: "map"
+  robot_base_frame: "base_link"
+
+visualization:
+  enabled: true
+  publish_markers: true
+  trajectory_color: [0.0, 1.0, 0.0]
+  tube_color: [0.0, 0.0, 1.0]
+  terminal_set_color: [1.0, 0.0, 0.0]
+  robustness_color: [1.0, 1.0, 0.0]
+  tube_alpha: 0.3
+  terminal_set_alpha: 0.3

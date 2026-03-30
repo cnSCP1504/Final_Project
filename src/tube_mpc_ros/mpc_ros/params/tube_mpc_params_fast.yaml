@@ -1,0 +1,74 @@
+MPCPlannerROS:
+  global_path_topic: /move_base/MPCPlannerROS/global_plan
+  map_frame: map
+  odom_frame: odom
+  base_frame: base_footprint
+
+  # ========== 速度限制（快速模式） ==========
+  min_trans_vel: 0.1
+  max_vel_x: 1.8           # 提高最大速度：1.5 → 1.8
+  min_vel_x: -0.1
+  max_vel_y: 0.0
+  min_vel_y: 0.0
+  trans_stopped_vel: 0.1
+  max_rot_vel: 3.0         # 提高最大角速度：2.5 → 3.0
+  min_rot_vel: 0.1
+  rot_stopped_vel: 0.1
+
+  # ========== 加速度限制（快速响应） ==========
+  acc_lim_x: 4.0           # 提高线加速度：3.0 → 4.0
+  acc_lim_theta: 5.0       # 提高角加速度：4.0 → 5.0
+  acc_lim_y: 0.0
+
+  # ========== 目标容差（快速到达） ==========
+  yaw_goal_tolerance: 0.6  # 放宽容差
+  xy_goal_tolerance: 0.4   # 放宽容差
+  latch_xy_goal_tolerance: false
+
+  # ========== 路径跟随权重 ==========
+  path_distance_bias: 32.0
+  goal_distance_bias: 20.0
+  occdist_scale: 0.02
+  forward_point_distance: 0.4
+  stop_time_buffer: 0.2
+  scaling_speed: 0.25
+  max_scaling_factor: 0.2
+  oscillation_reset_dist: 0.05
+
+  # ========== 可视化 ==========
+  publish_traj_pc: true
+  publish_cost_grid_pc: true
+  debug_info: true
+
+  # ========== MPC核心参数（快速版） ==========
+  max_speed: 1.2           # 提高最大速度：1.0 → 1.2
+  waypoints_dist: -1.0
+  path_length: 8.0
+  controller_freq: 20      # 提高控制频率
+  mpc_steps: 20
+
+  # ========== 参考值 ==========
+  mpc_ref_cte: 0.0
+  mpc_ref_vel: 1.0        # 提高参考速度：0.8 → 1.0
+  mpc_ref_etheta: 0.0
+
+  # ========== 代价函数权重（快速） ==========
+  mpc_w_cte: 50.0         # 保持横向误差权重
+  mpc_w_etheta: 60.0      # 保持航向权重
+  mpc_w_vel: 3.0          # 降低速度权重：5 → 3（优先速度）
+  mpc_w_angvel: 20.0      # 降低角速度权重：30 → 20
+  mpc_w_angvel_d: 20.0
+  mpc_w_accel: 5.0        # 降低加速度权重：10 → 5
+  mpc_w_accel_d: 3.0      # 降低加速度变化权重：5 → 3
+
+  # ========== 控制约束 ==========
+  mpc_max_angvel: 2.5     # 提高最大角速度：2.0 → 2.5
+  mpc_max_throttle: 12.0  # 提高throttle：10.0 → 12.0
+  mpc_bound_value: 1.0e3
+
+  # ========== 扰动与管控制 ==========
+  disturbance_bound: 0.15
+  enable_adaptive_disturbance: true
+  disturbance_window_size: 100
+  tube_visualization: true
+  error_feedback_gain: 0.7  # 提高反馈增益：0.6 → 0.7

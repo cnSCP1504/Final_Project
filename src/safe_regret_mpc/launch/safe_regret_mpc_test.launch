@@ -33,6 +33,14 @@
   <arg name="reference_velocity" default="0.5"/>
   <arg name="use_gazebo" default="true"/>
 
+  <!-- ========== Phase 6: Robot Initial Pose at Station S1 (Loading Area - West) ========== -->
+  <arg name="x_pos" default="-8.0"/>   <!-- Station S1: X坐标 -->
+  <arg name="y_pos" default="0.0"/>    <!-- Station S1: Y坐标 -->
+  <arg name="z_pos" default="0.0"/>    <!-- 地面高度 -->
+  <arg name="roll" default="0"/>       <!-- 无翻滚 -->
+  <arg name="pitch" default="0"/>      <!-- 无俯仰 -->
+  <arg name="yaw" default="0.0"/>      <!-- Station S1: 朝向东（正X方向） -->
+
   <!-- ========== Parameters ========== -->
   <rosparam file="$(find safe_regret_mpc)/params/safe_regret_mpc_params.yaml" command="load"/>
 
@@ -68,7 +76,14 @@
 
   <!-- ========== Gazebo Simulation ========== -->
   <group if="$(arg use_gazebo)">
-    <include file="$(find tube_mpc_ros)/launch/nav_gazebo.launch"/>
+    <include file="$(find tube_mpc_ros)/launch/nav_gazebo_test.launch">
+      <arg name="x_pos" value="$(arg x_pos)"/>
+      <arg name="y_pos" value="$(arg y_pos)"/>
+      <arg name="z_pos" value="$(arg z_pos)"/>
+      <arg name="roll" value="$(arg roll)"/>
+      <arg name="pitch" value="$(arg pitch)"/>
+      <arg name="yaw" value="$(arg yaw)"/>
+    </include>
   </group>
 
   <!-- ========== STL Monitor ========== -->
@@ -156,12 +171,12 @@
           required="false"/>
   </group>
 
-  <!-- ========== Auto Navigation Goal ========== -->
+  <!-- ========== Auto Navigation Goal (Phase 6: S1 → S2 Logistics Task) ========== -->
   <node name="auto_nav_goal" pkg="safe_regret_mpc" type="auto_nav_goal.py" output="screen"
         launch-prefix="bash -c 'sleep 5; $0 $@'">
-    <param name="goal_x" value="3.0"/>
-    <param name="goal_y" value="-7.0"/>
-    <param name="goal_yaw" value="0.0"/>
+    <param name="goal_x" value="8.0"/>    <!-- Station S2: 卸载区X坐标 -->
+    <param name="goal_y" value="0.0"/>     <!-- Station S2: Y坐标 -->
+    <param name="goal_yaw" value="0.0"/>   <!-- 朝向东 -->
   </node>
 
 </launch>
