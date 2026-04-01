@@ -13,6 +13,6 @@ global_costmap:
 
 
     inflation_layer:
-        inflation_radius: 2.5
+        inflation_radius: 0.25  # Set to 0.25 for balanced safety and navigation
         cost_scaling_factor: 2.0
 

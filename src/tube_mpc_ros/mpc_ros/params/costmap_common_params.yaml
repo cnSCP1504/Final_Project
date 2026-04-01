@@ -4,7 +4,9 @@
 #footprint: [ [0.254, -0.0508], [0.1778, -0.0508], [0.1778, -0.1778], [-0.1905, -0.1778], [-0.254, 0], [-0.1905, 0.1778], [0.1778, 0.1778], [0.1778, 0.0508], [0.254, 0.0508] ]
 #footprint: [ [-0.1,-0.125], [0.5,-0.125], [0.5,0.125], [-0.1,0.125] ]
 #footprint: [ [-0.6,-0.125], [0.0,-0.125], [0.0,0.125], [-0.6,0.125] ]
-footprint: [[-0.350, -0.350], [-0.350, 0.350], [0.300, 0.350], [0.300, -0.350]]
+# Optimized footprint based on actual servingbot dimensions (53cm × 53cm)
+# Length: 54cm (0.27 + 0.27), Width: 54cm (0.27 × 2), minimal safety margin for 0.75m navigation
+footprint: [[-0.27, -0.27], [-0.27, 0.27], [0.27, 0.27], [0.27, -0.27]]
 
 transform_tolerance: 0.2
 map_type: costmap
@@ -13,7 +15,7 @@ obstacle_layer:
  enabled: true
  obstacle_range: 3.0
  raytrace_range: 3.5
- inflation_radius: 0.2
+ inflation_radius: 0.25
  track_unknown_space: false
  combination_method: 1
 
@@ -24,7 +26,7 @@ obstacle_layer:
 inflation_layer:
   enabled:              true
   cost_scaling_factor:  10.0  # exponential rate at which the obstacle cost drops off (default: 10)
-  inflation_radius:     0.5  # max. distance from an obstacle at which costs are incurred for planning paths.
+  inflation_radius:     0.25  # max. distance from an obstacle at which costs are incurred for planning paths (set to 0.25 for balanced safety)
 
 static_layer:
   enabled:              true
