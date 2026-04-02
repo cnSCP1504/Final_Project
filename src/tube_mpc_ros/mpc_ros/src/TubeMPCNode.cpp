@@ -695,12 +695,12 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
             tempPose.pose.position.x = _tube_mpc.mpc_x[i];
             tempPose.pose.position.y = _tube_mpc.mpc_y[i];
 
-            myQuaternion.setRPY( 0, 0, _tube_mpc.mpc_theta[i] );  
+            myQuaternion.setRPY( 0, 0, _tube_mpc.mpc_theta[i] );
             tempPose.pose.orientation.x = myQuaternion[0];
             tempPose.pose.orientation.y = myQuaternion[1];
             tempPose.pose.orientation.z = myQuaternion[2];
             tempPose.pose.orientation.w = myQuaternion[3];
-                
+
             _mpc_traj.poses.push_back(tempPose);
         }
         _pub_mpctraj.publish(_mpc_traj);

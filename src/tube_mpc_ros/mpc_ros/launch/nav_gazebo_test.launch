@@ -89,8 +89,9 @@
         <rosparam file="$(find tube_mpc_ros)/params/mpc_last_params.yaml" command="load" />
         <!-- Safe-Regret MPC Integration Mode -->
         <param name="enable_safe_regret_integration" value="$(arg enable_safe_regret_integration)"/>
-        <!-- Critical: Remap global plan topic to match GlobalPlanner -->
-        <remap from="/global_plan" to="/move_base/GlobalPlanner/plan"/>
+        <!-- Critical: Remap global plan topics to match GlobalPlanner -->
+        <remap from="/move_base/TrajectoryPlannerROS/global_plan" to="/move_base/GlobalPlanner/plan"/>
+        <remap from="/move_base/MPCPlannerROS/global_plan" to="/move_base/GlobalPlanner/plan"/>
     </node>
 
     <!--  ************** Pure Pursuit **************  -->

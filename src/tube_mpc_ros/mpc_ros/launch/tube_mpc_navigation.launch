@@ -77,6 +77,9 @@
     <node name="TubeMPC_Node" pkg="tube_mpc_ros" type="tube_TubeMPC_Node" output="screen" if="$(eval controller == 'tube_mpc')" >
         <rosparam file="$(find tube_mpc_ros)/params/tube_mpc_params.yaml" command="load" />
         <param name="enable_terminal_set" value="$(arg enable_terminal_set)"/>
+        <!-- Critical: Remap global plan topics to match GlobalPlanner -->
+        <remap from="/move_base/TrajectoryPlannerROS/global_plan" to="/move_base/GlobalPlanner/plan"/>
+        <remap from="/move_base/MPCPlannerROS/global_plan" to="/move_base/GlobalPlanner/plan"/>
     </node>
 
     <!--  ************** MPC Node (for comparison) **************  -->
