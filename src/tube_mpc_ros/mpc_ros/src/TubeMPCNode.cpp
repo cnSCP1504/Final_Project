@@ -442,12 +442,19 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         const double v = odom.twist.twist.linear.x;
 
         const int N = odom_path.poses.size();
+
+        // Safety check: Need at least 4 points for 3rd order polynomial
+        if(N < 4) {
+            ROS_WARN_THROTTLE(1.0, "Path has only %d points, need at least 4. Skipping control.", N);
+            return;
+        }
+
         const double costheta = cos(theta);
         const double sintheta = sin(theta);
 
         VectorXd x_veh(N);
         VectorXd y_veh(N);
-        for(int i = 0; i < N; i++) 
+        for(int i = 0; i < N; i++)
         {
             const double dx = odom_path.poses[i].pose.position.x - px;
             const double dy = odom_path.poses[i].pose.position.y - py;
@@ -455,7 +462,9 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
             y_veh[i] = dy * costheta - dx * sintheta;
         }
 
-        auto coeffs = polyfit(x_veh, y_veh, 3); 
+        // Use lower polynomial order if we don't have enough points
+        int poly_order = (N >= 6) ? 3 : (N >= 4 ? 2 : 1);
+        auto coeffs = polyfit(x_veh, y_veh, poly_order); 
         const double cte  = polyeval(coeffs, 0.0);
         double etheta = atan(coeffs[1]);
 

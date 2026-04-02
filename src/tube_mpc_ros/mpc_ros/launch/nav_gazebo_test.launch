@@ -84,6 +84,15 @@
         <param name="enable_safe_regret_integration" value="$(arg enable_safe_regret_integration)"/>
     </node>
 
+    <!-- ************** Tube MPC Node ************** -->
+    <node name="tube_mpc" pkg="tube_mpc_ros" type="tube_TubeMPC_Node" output="screen" if="$(eval controller == 'tube_mpc')" >
+        <rosparam file="$(find tube_mpc_ros)/params/mpc_last_params.yaml" command="load" />
+        <!-- Safe-Regret MPC Integration Mode -->
+        <param name="enable_safe_regret_integration" value="$(arg enable_safe_regret_integration)"/>
+        <!-- Critical: Remap global plan topic to match GlobalPlanner -->
+        <remap from="/global_plan" to="/move_base/GlobalPlanner/plan"/>
+    </node>
+
     <!--  ************** Pure Pursuit **************  -->
     <node name="Pure_Pursuit" pkg="tube_mpc_ros" type="tube_Pure_Pursuit" output="screen" if="$(eval controller == 'pure_pursuit')" >
         <rosparam file="$(find tube_mpc_ros)/params/pure_pursuit_params.yaml" command="load" />
@@ -93,6 +102,6 @@
         <remap from="/pure_pursuit/cmd_vel" to="/cmd_vel" />
     </node>
 
-    <!--  ************** Visualisation **************  -->
-    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find tube_mpc_ros)/params/total_rviz_navigation.rviz"/>
+    <!--  ************** Visualisation ************** -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find tube_mpc_ros)/params/tube_mpc_navigation.rviz"/>
 </launch>

@@ -9,7 +9,7 @@ Panels:
         - /Tube MPC Visualization1
         - /Navigation1
         - /Robot Model1
-      Splitter Ratio: 0.5
+      Splitter Ratio: 0.15
     Tree Height: 565
   - Class: rviz/Selection
     Name: Selection
@@ -163,9 +163,9 @@ Visualization Manager:
           Unreliable: false
           Use Timestamp: false
           Value: true
-        - Alpha: 0.7000000178813934
+        - Alpha: 0.800000011920929
           Class: rviz/Map
-          Color Scheme: costmap
+          Color Scheme: map
           Draw Behind: false
           Enabled: true
           Name: Local_Costmap
