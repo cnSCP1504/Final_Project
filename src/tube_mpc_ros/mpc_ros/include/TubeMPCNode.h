@@ -72,6 +72,9 @@ class TubeMPCNode
         double _pathLength, _goalRadius, _waypointsDist;
         int _controller_freq, _downSampling, _thread_numbers;
         bool _goal_received, _goal_reached, _path_computed, _pub_twist_flag, _debug_info;
+
+        // Safe-Regret MPC Integration
+        bool _enable_safe_regret_integration;  // 是否启用safe_regret_mpc集成模式
         
         VectorXd _w_residuals;
         int _num_residuals;

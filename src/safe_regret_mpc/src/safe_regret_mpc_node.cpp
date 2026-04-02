@@ -16,7 +16,11 @@ SafeRegretMPCNode::SafeRegretMPCNode(ros::NodeHandle& nh, ros::NodeHandle& priva
       terminal_set_received_(false),
       system_ready_(false),
       odom_received_(false),
-      plan_received_(false)
+      plan_received_(false),
+      tube_mpc_cmd_received_(false),
+      tube_mpc_traj_received_(false),
+      tube_mpc_error_received_(false),
+      enable_integration_mode_(true)
 {
     // Initialize publishers and subscribers in initialize()
 }
@@ -67,8 +71,16 @@ bool SafeRegretMPCNode::initialize() {
                                          &SafeRegretMPCNode::terminalSetCallback, this);
     }
 
+    // Tube MPC data subscribers (integration mode)
+    sub_tube_mpc_cmd_ = nh_.subscribe("/cmd_vel_raw", 1,
+                                      &SafeRegretMPCNode::tubeMPCCmdCallback, this);
+    sub_tube_mpc_traj_ = nh_.subscribe("/mpc_trajectory", 1,
+                                       &SafeRegretMPCNode::tubeMPCTrajectoryCallback, this);
+    sub_tube_mpc_error_ = nh_.subscribe("/tube_mpc/tracking_error", 1,
+                                        &SafeRegretMPCNode::tubeMPCErrorCallback, this);
+
     // Publishers
-    pub_cmd_vel_ = nh_.advertise<geometry_msgs::Twist>("cmd_vel", 1);
+    pub_cmd_vel_final_ = nh_.advertise<geometry_msgs::Twist>("cmd_vel", 1);  // Final command (processed)
     pub_system_state_ = nh_.advertise<safe_regret_mpc::SafeRegretState>("system_state", 1);
     pub_metrics_ = nh_.advertise<safe_regret_mpc::SafeRegretMetrics>("metrics", 1);
     pub_mpc_trajectory_ = nh_.advertise<nav_msgs::Path>("mpc_trajectory", 1);
@@ -114,6 +126,9 @@ void SafeRegretMPCNode::loadParameters() {
 
     // Terminal set parameters
     private_nh_.param("enable_terminal_set", terminal_set_enabled_, false);
+
+    // Integration mode parameters
+    private_nh_.param("enable_integration_mode", enable_integration_mode_, true);
 
     // MPC parameters
     private_nh_.param("mpc_steps", mpc_steps_, 20);
@@ -354,15 +369,71 @@ void SafeRegretMPCNode::terminalSetCallback(
     }
 }
 
+// ========== Tube MPC Data Callbacks (Integration Mode) ==========
+
+void SafeRegretMPCNode::tubeMPCCmdCallback(const geometry_msgs::Twist::ConstPtr& msg) {
+    tube_mpc_cmd_raw_ = *msg;
+    tube_mpc_cmd_received_ = true;
+
+    // Process the raw command through STL/DR modules
+    if (enable_integration_mode_) {
+        processTubeMPCCommand();
+    } else {
+        // Direct forwarding (no processing)
+        publishFinalCommand(tube_mpc_cmd_raw_);
+    }
+
+    if (debug_mode_) {
+        ROS_DEBUG("Tube MPC raw command: v=%.3f, w=%.3f",
+                  msg->linear.x, msg->angular.z);
+    }
+}
+
+void SafeRegretMPCNode::tubeMPCTrajectoryCallback(const nav_msgs::Path::ConstPtr& msg) {
+    tube_mpc_trajectory_ = *msg;
+    tube_mpc_traj_received_ = true;
+
+    // Forward trajectory for visualization
+    if (enable_visualization_) {
+        pub_mpc_trajectory_.publish(tube_mpc_trajectory_);
+    }
+
+    // Forward trajectory to STL module if enabled
+    // TODO: Implement STL module integration
+
+    if (debug_mode_) {
+        ROS_DEBUG("Tube MPC trajectory received: %zu poses",
+                  msg->poses.size());
+    }
+}
+
+void SafeRegretMPCNode::tubeMPCErrorCallback(const std_msgs::Float64MultiArray::ConstPtr& msg) {
+    tube_mpc_error_ = *msg;
+    tube_mpc_error_received_ = true;
+
+    // Forward error to DR module if enabled
+    if (dr_enabled_ && dr_received_) {
+        // DR module will use this for constraint tightening
+        // TODO: Implement DR module forwarding
+    }
+
+    if (debug_mode_) {
+        ROS_DEBUG("Tube MPC tracking error received: %zu values",
+                  msg->data.size());
+    }
+}
+
 // ========== Timer Callbacks ==========
 
 void SafeRegretMPCNode::controlTimerCallback(const ros::TimerEvent& event) {
-    if (!isSystemReady()) {
-        return;
-    }
+    // In integration mode, we don't solve MPC here
+    // tube_mpc handles the solving, we just process its output
 
-    solveMPC();
-    publishControl();
+    // The actual command processing happens in tubeMPCCmdCallback()
+    // This timer can be used for periodic monitoring tasks
+    if (debug_mode_ && tube_mpc_cmd_received_) {
+        ROS_DEBUG_THROTTLE(1.0, "Integration mode: waiting for tube_mpc commands");
+    }
 }
 
 void SafeRegretMPCNode::publishTimerCallback(const ros::TimerEvent& event) {
@@ -402,7 +473,11 @@ void SafeRegretMPCNode::solveMPC() {
 }
 
 void SafeRegretMPCNode::publishControl() {
-    pub_cmd_vel_.publish(cmd_vel_);
+    // Deprecated: Use publishFinalCommand() instead
+    // In integration mode, command is published via publishFinalCommand()
+    if (!enable_integration_mode_) {
+        pub_cmd_vel_final_.publish(cmd_vel_);
+    }
 }
 
 void SafeRegretMPCNode::publishSystemState() {
@@ -514,6 +589,102 @@ bool SafeRegretMPCNode::resetRegretTrackerCallback(
     res.cumulative_regret_after = after;
 
     return true;
+}
+
+// ========== Tube MPC Command Processing (Integration Mode) ==========
+
+void SafeRegretMPCNode::processTubeMPCCommand() {
+    if (!tube_mpc_cmd_received_) {
+        ROS_WARN_THROTTLE(2.0, "No tube_mpc command received yet");
+        return;
+    }
+
+    geometry_msgs::Twist cmd_final = tube_mpc_cmd_raw_;
+
+    // Process through STL module if enabled
+    if (stl_enabled_ && stl_received_) {
+        cmd_final = adjustCommandForSTL(cmd_final);
+    }
+
+    // Process through DR module if enabled
+    if (dr_enabled_ && dr_received_) {
+        cmd_final = adjustCommandForDR(cmd_final);
+    }
+
+    // Publish final command
+    publishFinalCommand(cmd_final);
+}
+
+geometry_msgs::Twist SafeRegretMPCNode::adjustCommandForSTL(
+    const geometry_msgs::Twist& cmd_raw) {
+
+    geometry_msgs::Twist cmd_adjusted = cmd_raw;
+
+    // STL-based adjustment logic
+    // For now, implement a simple scaling based on robustness
+    double stl_factor = 1.0;
+
+    if (stl_info_.robustness_value < 0.0) {
+        // Low robustness: scale down commands
+        stl_factor = std::max(0.5, 1.0 + stl_info_.robustness_value / 2.0);
+    }
+
+    cmd_adjusted.linear.x *= stl_factor;
+    cmd_adjusted.angular.z *= stl_factor;
+
+    if (debug_mode_) {
+        ROS_DEBUG("STL adjustment: factor=%.3f, v: %.3f→%.3f, w: %.3f→%.3f",
+                  stl_factor,
+                  cmd_raw.linear.x, cmd_adjusted.linear.x,
+                  cmd_raw.angular.z, cmd_adjusted.angular.z);
+    }
+
+    return cmd_adjusted;
+}
+
+geometry_msgs::Twist SafeRegretMPCNode::adjustCommandForDR(
+    const geometry_msgs::Twist& cmd_raw) {
+
+    geometry_msgs::Twist cmd_adjusted = cmd_raw;
+
+    // DR-based safety check
+    // For now, implement basic velocity limiting based on DR margins
+    double max_linear_vel = 1.0;  // Default limit
+    double max_angular_vel = 1.5; // Default limit
+
+    // If DR margins are available, use them to adjust limits
+    if (dr_info_.margins.size() > 0) {
+        // TODO: Implement proper DR margin interpretation
+        // For now, use a conservative approach
+        max_linear_vel *= 0.9;
+        max_angular_vel *= 0.9;
+    }
+
+    // Apply limits
+    cmd_adjusted.linear.x = std::max(-max_linear_vel,
+                                      std::min(max_linear_vel,
+                                              cmd_adjusted.linear.x));
+    cmd_adjusted.angular.z = std::max(-max_angular_vel,
+                                       std::min(max_angular_vel,
+                                                  cmd_adjusted.angular.z));
+
+    if (debug_mode_) {
+        ROS_DEBUG("DR adjustment: v: %.3f→%.3f, w: %.3f→%.3f",
+                  cmd_raw.linear.x, cmd_adjusted.linear.x,
+                  cmd_raw.angular.z, cmd_adjusted.angular.z);
+    }
+
+    return cmd_adjusted;
+}
+
+void SafeRegretMPCNode::publishFinalCommand(const geometry_msgs::Twist& cmd) {
+    cmd_vel_ = cmd;  // Store for publishing
+    pub_cmd_vel_final_.publish(cmd);
+
+    if (debug_mode_) {
+        ROS_DEBUG("Final command published: v=%.3f, w=%.3f",
+                  cmd.linear.x, cmd.angular.z);
+    }
 }
 
 // ========== Main ==========

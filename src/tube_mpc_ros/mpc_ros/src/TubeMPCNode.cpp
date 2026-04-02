@@ -45,6 +45,9 @@ TubeMPCNode::TubeMPCNode()
     pn.param<std::string>("odom_frame", _odom_frame, "odom");
     pn.param<std::string>("car_frame", _car_frame, "base_footprint");
 
+    // Safe-Regret MPC Integration Mode
+    pn.param("enable_safe_regret_integration", _enable_safe_regret_integration, false);
+
     cout << "\n===== Tube MPC Parameters =====" << endl;
     cout << "pub_twist_cmd: "  << _pub_twist_flag << endl;
     cout << "debug_info: "  << _debug_info << endl;
@@ -67,8 +70,19 @@ TubeMPCNode::TubeMPCNode()
     _pub_tube     = _nh.advertise<nav_msgs::Path>("/tube_boundaries", 1);
     _pub_tracking_error = _nh.advertise<std_msgs::Float64MultiArray>("/tube_mpc/tracking_error", 1);  // DR Tightening
 
-    if(_pub_twist_flag)
-        _pub_twist = _nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
+    // Safe-Regret MPC Integration: 发布话题根据模式决定
+    if(_pub_twist_flag) {
+        if (_enable_safe_regret_integration) {
+            // 集成模式：发布原始命令给safe_regret_mpc
+            _pub_twist = _nh.advertise<geometry_msgs::Twist>("/cmd_vel_raw", 1);
+            cout << "Safe-Regret MPC Integration: ENABLED" << endl;
+            cout << "  Publishing to /cmd_vel_raw (safe_regret_mpc will process)" << endl;
+        } else {
+            // 独立模式：直接发布cmd_vel
+            _pub_twist = _nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
+            cout << "Safe-Regret MPC Integration: DISABLED (standalone mode)" << endl;
+        }
+    }
 
     _timer1 = _nh.createTimer(ros::Duration((1.0)/_controller_freq), &TubeMPCNode::controlLoopCB, this);
 

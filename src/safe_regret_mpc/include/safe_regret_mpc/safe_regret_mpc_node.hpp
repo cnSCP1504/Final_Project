@@ -94,6 +94,21 @@ private:
     void terminalSetCallback(const safe_regret_mpc::TerminalSet::ConstPtr& msg);
 
     /**
+     * @brief Tube MPC command callback (raw command from tube_mpc)
+     */
+    void tubeMPCCmdCallback(const geometry_msgs::Twist::ConstPtr& msg);
+
+    /**
+     * @brief Tube MPC trajectory callback
+     */
+    void tubeMPCTrajectoryCallback(const nav_msgs::Path::ConstPtr& msg);
+
+    /**
+     * @brief Tube MPC tracking error callback
+     */
+    void tubeMPCErrorCallback(const std_msgs::Float64MultiArray::ConstPtr& msg);
+
+    /**
      * @brief Control timer callback
      */
     void controlTimerCallback(const ros::TimerEvent& event);
@@ -174,6 +189,26 @@ private:
     void publishVisualizations();
 
     /**
+     * @brief Process tube_mpc command through STL/DR modules
+     */
+    void processTubeMPCCommand();
+
+    /**
+     * @brief Adjust command based on STL robustness
+     */
+    geometry_msgs::Twist adjustCommandForSTL(const geometry_msgs::Twist& cmd_raw);
+
+    /**
+     * @brief Adjust command based on DR safety margins
+     */
+    geometry_msgs::Twist adjustCommandForDR(const geometry_msgs::Twist& cmd_raw);
+
+    /**
+     * @brief Publish final command to robot
+     */
+    void publishFinalCommand(const geometry_msgs::Twist& cmd);
+
+    /**
      * @brief Update reference trajectory
      */
     void updateReferenceTrajectory();
@@ -203,12 +238,17 @@ private:
     ros::Subscriber sub_dr_margins_;
     ros::Subscriber sub_terminal_set_;
 
+    // Tube MPC data subscribers (integration mode)
+    ros::Subscriber sub_tube_mpc_cmd_;        // Raw command from tube_mpc
+    ros::Subscriber sub_tube_mpc_traj_;       // MPC trajectory from tube_mpc
+    ros::Subscriber sub_tube_mpc_error_;      // Tracking error from tube_mpc
+
     // Publishers
-    ros::Publisher pub_cmd_vel_;
+    ros::Publisher pub_cmd_vel_final_;        // Final command (processed) - renamed from pub_cmd_vel_
     ros::Publisher pub_system_state_;
     ros::Publisher pub_metrics_;
-    ros::Publisher pub_mpc_trajectory_;
-    ros::Publisher pub_tube_boundaries_;
+    ros::Publisher pub_mpc_trajectory_;       // Forwarded from tube_mpc
+    ros::Publisher pub_tube_boundaries_;       // Forwarded from tube_mpc
     ros::Publisher pub_stl_info_;
     ros::Publisher pub_dr_info_;
     ros::Publisher pub_terminal_info_;
@@ -256,10 +296,19 @@ private:
     bool terminal_set_received_;
 
     // Control state
-    geometry_msgs::Twist cmd_vel_;
+    geometry_msgs::Twist cmd_vel_;               // Deprecated: use tube_mpc_cmd_raw_ and cmd_vel_final_
     bool system_ready_;
     bool odom_received_;
     bool plan_received_;
+
+    // Tube MPC data (integration mode)
+    geometry_msgs::Twist tube_mpc_cmd_raw_;     // Raw command from tube_mpc
+    nav_msgs::Path tube_mpc_trajectory_;         // Trajectory from tube_mpc
+    std_msgs::Float64MultiArray tube_mpc_error_; // Tracking error from tube_mpc
+    bool tube_mpc_cmd_received_;
+    bool tube_mpc_traj_received_;
+    bool tube_mpc_error_received_;
+    bool enable_integration_mode_;               // Integration mode flag
 
     // Parameters
     std::string controller_mode_;     // "STL_MPC", "DR_MPC", "SAFE_REGRET_MPC"
