@@ -305,7 +305,7 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
                 sampling = sampling + 1;
             }
 
-            if(odom_path.poses.size() >= 2 )  // 降低要求：至少2个点（原来是6）
+            if(odom_path.poses.size() >= 4 )  // 需要至少4个点才能进行3阶多项式拟合
             {
                 _odom_path = odom_path;
                 _path_computed = true;
@@ -316,11 +316,38 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
                 ROS_INFO("Path transformation successful: %d points transformed from %s to %s",
                          (int)odom_path.poses.size(), _map_frame.c_str(), _odom_frame.c_str());
             }
-            else
+            else  // 路径点数<4，检查是否已经到达目标
             {
-                cout << "Failed to path generation: only " << odom_path.poses.size() << " points" << endl;
+                // 检查机器人是否已经非常接近目标
+                try {
+                    tf::StampedTransform transform;
+                    _tf_listener.lookupTransform(_map_frame, _car_frame, ros::Time(0), transform);
+
+                    double car2goal_x = _goal_pos.x - transform.getOrigin().x();
+                    double car2goal_y = _goal_pos.y - transform.getOrigin().y();
+                    double dist2goal = sqrt(car2goal_x*car2goal_x + car2goal_y*car2goal_y);
+
+                    // 使用稍大的阈值（1.3倍goalRadius）来处理接近目标的情况
+                    if(dist2goal < _goalRadius * 1.3)
+                    {
+                        _goal_reached = true;
+                        _path_computed = false;
+                        ROS_INFO("Goal reached! Path has only %d point(s), distance to goal: %.2f m < %.2f m",
+                                 (int)odom_path.poses.size(), dist2goal, _goalRadius * 1.3);
+                        cout << "=== Goal Reached ===" << endl;
+                    }
+                    else
+                    {
+                        ROS_WARN_THROTTLE(2.0, "Path has only %d point(s), distance to goal: %.2f m. Waiting...",
+                                          (int)odom_path.poses.size(), dist2goal);
+                        _path_computed = false;
+                    }
+                }
+                catch(tf::TransformException& ex) {
+                    ROS_WARN_THROTTLE(2.0, "Cannot check goal distance: %s", ex.what());
+                    _path_computed = false;
+                }
                 _waypointsDist = -1;
-                _path_computed = false;
             }
         }
         catch(tf::TransformException &ex)

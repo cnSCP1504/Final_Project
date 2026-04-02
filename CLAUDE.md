@@ -936,6 +936,20 @@ s.t. dynamics constraints
 - RViz configurations are tracked in rviz/
 - Paper source: `latex/manuscript.tex` (1372 lines, complete draft)
 
+### ⚠️ IMPORTANT: Git Workflow Rules
+
+**DO NOT automatically commit or push changes to git:**
+- Code changes should be tested thoroughly before committing
+- **Wait for explicit user approval before creating git commits**
+- **DO NOT run `git commit` or `git push` automatically**
+- User will manually commit when ready
+- Focus on implementation and testing, not version control operations
+
+**Only commit/push when:**
+- User explicitly requests "上传git" or "commit" or "push"
+- All changes have been tested and verified
+- User confirms the changes are ready
+
 ### Recent Commit History
 ```
 b5cc076 fix: RViz配置调整 (2026-04-01)
