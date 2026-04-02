@@ -22,12 +22,22 @@
   -->
 
   <!-- ========== Arguments ========== -->
-  <arg name="controller_mode" default="SAFE_REGRET_MPC"/>
-  <arg name="enable_stl" default="true"/>
-  <arg name="enable_dr" default="true"/>
-  <arg name="enable_terminal_set" default="true"/>
-  <arg name="enable_visualization" default="false"/>
-  <arg name="debug_mode" default="false"/>
+  <!-- Integration Mode -->
+  <arg name="enable_safe_regret_integration" default="true"/>
+    <!-- true: tube_mpc发布/cmd_vel_raw → safe_regret_mpc处理 → /cmd_vel
+         false: tube_mpc直接发布/cmd_vel（独立模式） -->
+
+  <!-- Legacy Controller Mode (deprecated, kept for compatibility) -->
+  <arg name="controller_mode" default="INTEGRATION"/>
+
+  <!-- Feature Modules -->
+  <arg name="enable_stl" default="false"/>
+  <arg name="enable_dr" default="false"/>
+  <arg name="enable_terminal_set" default="false"/>
+
+  <!-- System Configuration -->
+  <arg name="enable_visualization" default="true"/>
+  <arg name="debug_mode" default="true"/>
   <arg name="controller_frequency" default="20"/>
   <arg name="mpc_steps" default="20"/>
   <arg name="reference_velocity" default="0.5"/>
@@ -77,12 +87,19 @@
   <!-- ========== Gazebo Simulation ========== -->
   <group if="$(arg use_gazebo)">
     <include file="$(find tube_mpc_ros)/launch/nav_gazebo_test.launch">
+      <!-- Position -->
       <arg name="x_pos" value="$(arg x_pos)"/>
       <arg name="y_pos" value="$(arg y_pos)"/>
       <arg name="z_pos" value="$(arg z_pos)"/>
       <arg name="roll" value="$(arg roll)"/>
       <arg name="pitch" value="$(arg pitch)"/>
       <arg name="yaw" value="$(arg yaw)"/>
+
+      <!-- Controller: use tube_mpc with integration mode -->
+      <arg name="controller" value="tube_mpc"/>
+
+      <!-- Safe-Regret MPC Integration Mode -->
+      <arg name="enable_safe_regret_integration" value="$(arg enable_safe_regret_integration)"/>
     </include>
   </group>
 
@@ -127,12 +144,13 @@
     </node>
   </group>
 
-  <!-- ========== Safe-Regret MPC Node ========== -->
+  <!-- ========== Safe-Regret MPC Node (Integration Center) ========== -->
   <node name="safe_regret_mpc" pkg="safe_regret_mpc" type="safe_regret_mpc_node"
         output="screen" required="true">
 
-    <!-- Override parameters in node's private namespace -->
-    <param name="controller_mode" value="$(arg controller_mode)"/>
+    <!-- Integration Mode Parameters -->
+    <param name="enable_integration_mode" value="$(arg enable_safe_regret_integration)"/>
+    <param name="controller_mode" value="INTEGRATION"/>
     <param name="enable_stl_constraints" value="$(arg enable_stl)"/>
     <param name="enable_dr_constraints" value="$(arg enable_dr)"/>
     <param name="enable_terminal_set" value="$(arg enable_terminal_set)"/>
@@ -141,12 +159,17 @@
     <param name="publish_frequency" value="10.0"/>
     <param name="mpc_steps" value="$(arg mpc_steps)"/>
     <param name="mpc_ref_vel" value="$(arg reference_velocity)"/>
-    <param name="enable_visualization" value="true"/>
+    <param name="enable_visualization" value="$(arg enable_visualization)"/>
 
-    <!-- Subscribed topics -->
+    <!-- Subscribed topics (from tube_mpc) -->
     <remap from="odom" to="/odom"/>
     <remap from="global_plan" to="/move_base/TrajectoryPlannerROS/global_plan"/>
     <remap from="goal" to="/move_base_simple/goal"/>
+
+    <!-- Tube MPC data (integration mode only) -->
+    <remap from="cmd_vel_raw" to="/cmd_vel_raw"/>  <!-- Raw command from tube_mpc -->
+    <remap from="mpc_trajectory" to="/mpc_trajectory"/>  <!-- Trajectory from tube_mpc -->
+    <remap from="tube_mpc/tracking_error" to="/tube_mpc/tracking_error"/>  <!-- Error from tube_mpc -->
 
     <!-- STL topics -->
     <remap from="stl_robustness" to="/stl_monitor/robustness"/>
@@ -156,10 +179,10 @@
     <remap from="terminal_set" to="/dr_terminal_set"/>
 
     <!-- Published topics -->
-    <remap from="cmd_vel" to="/cmd_vel"/>
+    <remap from="cmd_vel" to="/cmd_vel"/>  <!-- Final command to robot -->
     <remap from="system_state" to="/safe_regret_mpc/state"/>
     <remap from="metrics" to="/safe_regret_mpc/metrics"/>
-    <remap from="mpc_trajectory" to="/mpc_trajectory"/>
+    <remap from="mpc_trajectory" to="/mpc_trajectory"/>  <!-- Forwarded from tube_mpc -->
     <remap from="tube_boundaries" to="/tube_boundaries"/>
 
   </node>

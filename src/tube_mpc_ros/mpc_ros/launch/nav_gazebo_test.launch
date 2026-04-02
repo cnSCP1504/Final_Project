@@ -2,9 +2,14 @@
 
     <!--  ************** Global Parameters ***************  -->
     <param name="use_sim_time" value="true"/>
-    <arg name="controller"  default="mpc" doc="opt: dwa, mpc, pure_pursuit"/> 
-    <arg name="model"  default="serving_bot" doc="opt: serving_bot"/> 
-    <arg name="tf_prefix"  default=""/> 
+    <arg name="controller"  default="mpc" doc="opt: dwa, mpc, pure_pursuit"/>
+    <arg name="model"  default="serving_bot" doc="opt: serving_bot"/>
+    <arg name="tf_prefix"  default=""/>
+
+    <!-- Safe-Regret MPC Integration Mode -->
+    <arg name="enable_safe_regret_integration" default="false"/>
+      <!-- true: tube_mpc发布/cmd_vel_raw给safe_regret_mpc处理
+           false: tube_mpc直接发布/cmd_vel（独立模式） --> 
 
     <!--  ************** GAZEBO Simulator ***************  -->
     <arg name="x_pos" default="0.0"/>
@@ -75,6 +80,8 @@
     <!--  ************** MPC Node **************  -->
     <node name="nav_mpc" pkg="tube_mpc_ros" type="tube_nav_mpc" output="screen" if="$(eval controller == 'mpc')" >
         <rosparam file="$(find tube_mpc_ros)/params/mpc_last_params.yaml" command="load" />
+        <!-- Safe-Regret MPC Integration Mode -->
+        <param name="enable_safe_regret_integration" value="$(arg enable_safe_regret_integration)"/>
     </node>
 
     <!--  ************** Pure Pursuit **************  -->

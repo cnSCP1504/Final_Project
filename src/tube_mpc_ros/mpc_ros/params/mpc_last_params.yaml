@@ -4,6 +4,12 @@ MPCPlannerROS:
   odom_frame: odom
   base_frame: base_footprint
 
+  # ========== Safe-Regret MPC 集成模式 ==========
+  enable_safe_regret_integration: false
+    # false: 独立模式 - tube_mpc直接发布/cmd_vel
+    # true:  集成模式 - tube_mpc发布/cmd_vel_raw，由safe_regret_mpc处理后发布/cmd_vel
+    # 默认false保持向后兼容
+
   # ========== 速度限制（平滑模式） ==========
   min_trans_vel: 0.1
   max_vel_x: 1.2           # 降低最大速度：1.5 → 1.2
