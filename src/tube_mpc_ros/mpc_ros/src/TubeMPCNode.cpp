@@ -686,11 +686,11 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         }
 
         // === 智能转向策略：严格的原地旋转控制 ===
-        // 核心逻辑：一旦进入原地旋转模式（>90度），必须转到角度<30度才能退出
+        // 核心逻辑：一旦进入原地旋转模式（>90度），必须转到角度<10度才能退出
         // 在此期间完全禁止直行，只能原地转弯
         const double HEADING_ERROR_THRESHOLD = 1.05;  // 60度 (弧度) - 仅用于非旋转模式的减速
         const double HEADING_ERROR_CRITICAL = 1.57;   // 90度 (弧度) - 进入原地旋转的阈值
-        const double HEADING_ERROR_EXIT = 0.524;      // 30度 (弧度) - 退出原地旋转的阈值
+        const double HEADING_ERROR_EXIT = 0.175;      // 10度 (弧度) - 退出原地旋转的阈值
 
         // === 原地旋转状态机（严格版本）===
         if(std::abs(etheta) > HEADING_ERROR_CRITICAL && !_in_place_rotation) {
@@ -699,10 +699,10 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
             _in_place_rotation = true;
             cout << "[ROTATION] ENTERING pure rotation mode (" << (etheta * 180.0 / M_PI) << "° > 90°)" << endl;
         } else if(_in_place_rotation && std::abs(etheta) < HEADING_ERROR_EXIT) {
-            // 退出条件：已在旋转模式 且 角度 < 30度
+            // 退出条件：已在旋转模式 且 角度 < 10度
             // 注意：必须同时满足两个条件才能退出
             _in_place_rotation = false;
-            cout << "[ROTATION] EXITING pure rotation mode (" << (etheta * 180.0 / M_PI) << "° < 30°)" << endl;
+            cout << "[ROTATION] EXITING pure rotation mode (" << (etheta * 180.0 / M_PI) << "° < 10°)" << endl;
         }
 
         // === 应用速度限制（严格版本）===
@@ -713,7 +713,7 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
 
             // 每10次控制循环输出一次状态
             if(debug_counter % 10 == 0) {
-                cout << "[ROTATION] Speed=0.0 | Angle=" << (etheta * 180.0 / M_PI) << "° | Exit<30° | w=" << _w_filtered << endl;
+                cout << "[ROTATION] Speed=0.0 | Angle=" << (etheta * 180.0 / M_PI) << "° | Exit<10° | w=" << _w_filtered << endl;
             }
         } else if(std::abs(etheta) > HEADING_ERROR_THRESHOLD) {
             // ⚠️ 非旋转模式下的大角度偏差（60-90度）：减速但不停止
@@ -784,7 +784,7 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
 
         // ⚠️ CRITICAL FIX: 在应用最小速度阈值之前，检查是否处于原地旋转模式
         // 使用状态机标志 _in_place_rotation 而不是独立的角度判断
-        // 这确保一旦进入旋转模式，必须等到<30度才能退出
+        // 这确保一旦进入旋转模式，必须等到<10度才能退出
 
         if(!_in_place_rotation) {
             // 正常模式：应用最小速度阈值

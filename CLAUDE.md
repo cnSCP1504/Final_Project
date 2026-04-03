@@ -648,9 +648,11 @@ source devel/setup.bash
 
 - Code changes should be tested thoroughly before committing
 - Wait for explicit user approval before creating git commits
-- Do NOT run `git commit` or `git push` automatically
-- User will manually commit when ready
+- **DO NOT run `git push` automatically** (commit only when explicitly requested)
+- User will manually push when ready
 - Focus on implementation and testing, not version control operations
+
+**Updated 2026-04-03**: User prefers to manually push to remote repository. Auto-commit is acceptable when requested, but auto-push should be avoided.
 
 ## Tube MPC Specifics
 
@@ -809,6 +811,41 @@ RViz configuration files are located in `src/safe_regret_mpc/rviz/`:
 - ✅ Fixed RViz duplicate window issue (single tube_mpc_navigation.rviz)
 - ✅ Tested and verified both standalone and integration modes
 - Previous fixes: controller mode conflicts (060bd8c), intermittent movement (87c9a30), RViz settings (b5cc076)
+
+### Recent Updates (2026-04-03)
+
+**1. 严格原地旋转模式改进**
+- **问题**：转到90度就开始移动，左右抽搐
+- **修复**：
+  - 删除独立角度判断逻辑，统一使用状态机标志
+  - 实现方向锁定机制（进入时锁定旋转方向）
+  - 强制所有角速度朝锁定方向，防止MPC反向
+- **退出角度优化**：30度 → 10度（更精确的路径对齐）
+- **详细文档**：`test/docs/ROTATION_DIRECTION_FIX.md`, `EXIT_ANGLE_10_DEGREES.md`
+
+**2. 安全半径调整**
+- **问题**：容易撞墙
+- **修复**：所有安全半径参数增加10cm
+  - inflation_radius: 0.25m → 0.35m
+  - tube_radius: 0.08m → 0.18m
+  - safety_buffer: 0.08m → 0.18m
+  - safety.margin: 0.5m → 0.6m
+- **详细文档**：`SAFETY_RADIUS_INCREASE.md`
+
+**3. RViz视角修正**
+- **问题**：初始视角在地下向上看
+- **修复**：与Gazebo统一视角
+  - Distance: 20.0米（与Gazebo一致）
+  - Pitch: 1.57（向下90度俯视）
+  - Focal Point: (0, 0, 0)
+  - Yaw: 0
+
+**4. 转弯力度参数调整**
+- **修改参数**（用户手动调整）：
+  - max_rot_vel: 2.5 → 3.5
+  - acc_lim_theta: 4.0 → 6.0
+  - mpc_w_etheta: 60.0 → 30.0
+  - mpc_w_angvel: 30.0 → 20.0
 
 ### Large-Angle Turning Problem - ROOT CAUSE IDENTIFIED (2026-04-02)
 **Status**: ✅ **ROOT CAUSE FOUND** - Not an etheta calculation issue!
@@ -1209,14 +1246,18 @@ s.t. dynamics constraints
 **DO NOT automatically commit or push changes to git:**
 - Code changes should be tested thoroughly before committing
 - **Wait for explicit user approval before creating git commits**
-- **DO NOT run `git commit` or `git push` automatically**
-- User will manually commit when ready
+- **DO NOT run `git push` automatically** (commit only when requested)
+- User will manually push when ready
 - Focus on implementation and testing, not version control operations
 
-**Only commit/push when:**
-- User explicitly requests "上传git" or "commit" or "push"
+**Only commit when:**
+- User explicitly requests "commit" or "上传git" (without "push")
 - All changes have been tested and verified
 - User confirms the changes are ready
+
+**Only push when:**
+- User explicitly requests "push" or "推送" or "上传"
+- User wants to sync commits to remote repository
 
 ### Recent Commit History
 ```
