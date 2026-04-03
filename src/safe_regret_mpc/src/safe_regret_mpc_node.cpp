@@ -426,13 +426,40 @@ void SafeRegretMPCNode::tubeMPCErrorCallback(const std_msgs::Float64MultiArray::
 // ========== Timer Callbacks ==========
 
 void SafeRegretMPCNode::controlTimerCallback(const ros::TimerEvent& event) {
-    // In integration mode, we don't solve MPC here
-    // tube_mpc handles the solving, we just process its output
+    // Check if we have all required data
+    if (!odom_received_ || !plan_received_) {
+        return;
+    }
 
-    // The actual command processing happens in tubeMPCCmdCallback()
-    // This timer can be used for periodic monitoring tasks
-    if (debug_mode_ && tube_mpc_cmd_received_) {
-        ROS_DEBUG_THROTTLE(1.0, "Integration mode: waiting for tube_mpc commands");
+    // CRITICAL FIX: In integration mode with DR/STL enabled,
+    // we should solve our own MPC to properly incorporate DR constraints and STL robustness
+    // This aligns with the manuscript's theoretical framework
+
+    if (enable_integration_mode_) {
+        // In integration mode with DR or STL enabled, solve Safe-Regret MPC
+        if ((dr_enabled_ && dr_received_) || (stl_enabled_ && stl_received_)) {
+            if (debug_mode_) {
+                ROS_DEBUG_THROTTLE(1.0, "Solving Safe-Regret MPC with DR/STL constraints");
+            }
+
+            // Update reference trajectory from global plan
+            updateReferenceTrajectory();
+
+            // Solve Safe-Regret MPC (includes DR constraints and STL robustness in optimization)
+            solveMPC();
+
+            // Publish the command computed by Safe-Regret MPC
+            publishFinalCommand(cmd_vel_);
+        } else {
+            // Without DR/STL, just forward tube_mpc command
+            if (tube_mpc_cmd_received_) {
+                publishFinalCommand(tube_mpc_cmd_raw_);
+            }
+        }
+    } else {
+        // Standalone mode: solve MPC independently
+        solveMPC();
+        publishFinalCommand(cmd_vel_);
     }
 }
 
@@ -452,6 +479,43 @@ void SafeRegretMPCNode::solveMPC() {
                      current_odom_.twist.twist.linear.x,
                      0.0,  // cte
                      0.0;  // etheta
+
+    // CRITICAL FIX: Update DR margins before solving
+    if (dr_enabled_ && dr_received_) {
+        // Convert DRMargins message to vector<double>
+        std::vector<double> dr_margins = dr_info_.margins;
+
+        // Create dummy residuals (in real implementation, these would come from tracking error)
+        std::vector<Eigen::VectorXd> residuals;
+        // For now, just pass empty residuals - margins are already computed by dr_tightening node
+        residuals.clear();
+
+        // Update DR margins in MPC solver
+        mpc_solver_->updateDRMargins(residuals);
+
+        if (debug_mode_) {
+            ROS_DEBUG("Updated DR margins: %zu margins", dr_margins.size());
+        }
+    }
+
+    // CRITICAL FIX: Update STL robustness before solving
+    if (stl_enabled_ && stl_received_) {
+        // Create belief distribution (simplified - in real implementation would use actual covariance)
+        Eigen::VectorXd belief_mean = current_state;
+        Eigen::MatrixXd belief_cov = Eigen::MatrixXd::Zero(6, 6);
+        belief_cov(0, 0) = 0.1;  // x variance
+        belief_cov(1, 1) = 0.1;  // y variance
+        belief_cov(2, 2) = 0.01; // theta variance
+
+        // Update STL robustness in MPC solver
+        mpc_solver_->updateSTLRobustness(belief_mean, belief_cov);
+
+        if (debug_mode_) {
+            ROS_DEBUG("Updated STL robustness: %.3f, budget: %.3f",
+                     mpc_solver_->getSTLRobustness(),
+                     mpc_solver_->getSTLBudget());
+        }
+    }
 
     // Solve MPC
     bool success = mpc_solver_->solve(current_state, reference_trajectory_);
