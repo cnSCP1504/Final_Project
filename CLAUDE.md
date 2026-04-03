@@ -810,6 +810,156 @@ RViz configuration files are located in `src/safe_regret_mpc/rviz/`:
 - ✅ Tested and verified both standalone and integration modes
 - Previous fixes: controller mode conflicts (060bd8c), intermittent movement (87c9a30), RViz settings (b5cc076)
 
+### Large-Angle Turning Problem - ROOT CAUSE IDENTIFIED (2026-04-02)
+**Status**: ✅ **ROOT CAUSE FOUND** - Not an etheta calculation issue!
+
+**Symptom**: When a new goal point deviates 90° or more from the robot's current heading, the robot moves in reverse direction or behaves abnormally.
+
+**🚨 BREAKTHROUGH DISCOVERY** (2026-04-02):
+After extensive testing and investigation, the **root cause has been identified**:
+
+**The problem is NOT with etheta calculation in TubeMPCNode.cpp, but with GlobalPlanner path planning failure!**
+
+---
+
+#### Test Evidence
+
+**Test 1 - First Goal (SUCCESS)**:
+- Start position: (-8.0, 0.0)
+- Goal: (3.0, -7.0)
+- Result: ✅ **SUCCESS** - Robot reached goal successfully
+- Path points: 11 → 10 → 9 → 7 → 2 (gradually decreased)
+- Final distance: 0.62m < 0.65m (correctly identified arrival)
+- Log: `Goal reached! Path has only 2 point(s), distance to goal: 0.62 m < 0.65 m`
+
+**Test 2 - Second Goal (FAILURE)**:
+- Start position: (2.46, -6.69) [after reaching first goal]
+- Current heading: -32.72°
+- Attempted goals: (8.0, 0.0) and (0.0, 8.0)
+- Angle difference: ~100°+ (large-angle turn scenario)
+- Result: ❌ **FAILED** - GlobalPlanner cannot find path
+- Path points: **0** (empty path!)
+- Errors:
+  ```
+  [ERROR] Failed to get a plan.
+  [WARN] Path has only 0 point(s), distance to goal: 9.24 m. Waiting...
+  [ERROR] Rotate recovery can't rotate in place because there is a potential collision. Cost: -1.00
+  [ERROR] Aborting because a valid plan could not be found. Even after executing all recovery behaviors
+  ```
+
+**Test 3 - After Goal Arrival**:
+- Status:
+  ```
+  Goal received: YES
+  Goal reached: YES
+  Path computed: NO  ← No new path being planned!
+  ```
+
+---
+
+#### Root Cause Analysis
+
+**What's Actually Happening**:
+
+1. **First goal works fine**: GlobalPlanner successfully generates path → TubeMPC receives path → Robot reaches goal
+
+2. **Second large-angle goal fails**:
+   - New goal is sent (≥90° angle difference)
+   - **GlobalPlanner cannot find valid path** (returns 0 points)
+   - TubeMPC receives **empty path**
+   - TubeMPC skips control loop (safety check: `if(N < 4) return;`)
+   - Robot appears to "move in reverse" or behave erratically
+
+3. **Why GlobalPlanner fails** (Hypothesis):
+   - Robot position after first goal may be in a "corner" or near obstacles
+   - Costmap may have inflated obstacles that block path planning
+   - GlobalPlanner's recovery behaviors (rotate recovery, clear costmaps) also fail
+   - The large angle difference may cause planner to attempt paths that go through obstacles
+
+---
+
+#### Why Previous Attempts Failed
+
+All 4 attempted fixes to etheta calculation failed because:
+- ✅ Etheta calculation was **never the problem**
+- ✅ Polynomial fitting was **working correctly**
+- ❌ The real issue: **GlobalPlanner returns empty path** for large-angle turns
+- ❌ TubeMPC cannot control without a valid path
+
+---
+
+#### Next Steps for Fix
+
+**Option 1: Fix GlobalPlanner Parameters**
+- Adjust inflation radius, cost scaling factors
+- Tolerance for goal acceptance
+- Allow paths through narrow spaces
+- Test different global planners (NavFn, A*, Carrot)
+
+**Option 2: Improve Costmap Configuration**
+- Reduce inflation radius
+- Adjust obstacle layer parameters
+- Clear costmaps more aggressively
+- Use different costmap resolution
+
+**Option 3: Add Recovery Behaviors**
+- Implement custom recovery sequences
+- Force costmap clearing before replanning
+- Add in-place rotation capability
+- Fallback to simpler planners
+
+**Option 4: Change Test Scenario**
+- Design goals that avoid large-angle jumps
+- Use waypoints instead of direct goals
+- Ensure continuous path feasibility
+
+---
+
+#### Testing Commands for Reproduction
+
+```bash
+# Start system
+roslaunch safe_regret_mpc safe_regret_mpc_test.launch
+
+# After first goal reached, manually send large-angle goal
+rostopic pub /move_base_simple/goal geometry_msgs/PoseStamped "header:
+  frame_id: 'map'
+pose:
+  position:
+    x: 8.0
+    y: 0.0
+    z: 0.0
+  orientation:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    w: 1.0" --once
+
+# Monitor GlobalPlanner output
+rostopic echo /move_base/GlobalPlanner/plan
+
+# Check for planning errors
+rostopic echo /rosout | grep -i "failed\|error\|plan"
+```
+
+---
+
+#### Related Code Locations
+
+**NOT the Problem** (do not modify):
+- `src/tube_mpc_ros/mpc_ros/src/TubeMPCNode.cpp` lines 478-526 (etheta calculation)
+- Polynomial fitting functions
+- Angle normalization code
+
+**Actual Problem Areas** (investigate here):
+- `src/safe_regret_mpc/launch/safe_regret_mpc_test.launch` (move_base config)
+- GlobalPlanner parameters: `/move_base/GlobalPlanner/*`
+- Costmap parameters: `/move_base/global_costmap/*` and `/move_base/local_costmap/*`
+- Recovery behavior configurations
+
+**Previous git commit** (last working version with goal arrival fix):
+- Commit: `f8cb723` ("fix: 修复到达终点后无法识别目标已到达的问题")
+
 ## Safe-Regret MPC Theory (From Paper)
 
 ### Problem Formulation

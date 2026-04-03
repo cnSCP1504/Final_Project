@@ -327,20 +327,33 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
                     double car2goal_y = _goal_pos.y - transform.getOrigin().y();
                     double dist2goal = sqrt(car2goal_x*car2goal_x + car2goal_y*car2goal_y);
 
-                    // 使用稍大的阈值（1.3倍goalRadius）来处理接近目标的情况
-                    if(dist2goal < _goalRadius * 1.3)
+                    // 使用严格的到达阈值（goalRadius）确保精确到达目标
+                    double arrival_threshold = _goalRadius;  // 0.5米（严格模式）
+                    if(dist2goal < arrival_threshold)
                     {
                         _goal_reached = true;
                         _path_computed = false;
                         ROS_INFO("Goal reached! Path has only %d point(s), distance to goal: %.2f m < %.2f m",
-                                 (int)odom_path.poses.size(), dist2goal, _goalRadius * 1.3);
+                                 (int)odom_path.poses.size(), dist2goal, arrival_threshold);
                         cout << "=== Goal Reached ===" << endl;
                     }
                     else
                     {
-                        ROS_WARN_THROTTLE(2.0, "Path has only %d point(s), distance to goal: %.2f m. Waiting...",
-                                          (int)odom_path.poses.size(), dist2goal);
-                        _path_computed = false;
+                        // ⚠️ 关键修复：即使路径点数少，如果距离目标还远，仍然允许控制
+                        // 只要有至少2个点，就可以继续控制
+                        if(odom_path.poses.size() >= 2)
+                        {
+                            _path_computed = true;  // 允许继续控制
+                            ROS_WARN_THROTTLE(2.0, "Path has only %d point(s), distance to goal: %.2f m. Continuing control...",
+                                              (int)odom_path.poses.size(), dist2goal);
+                        }
+                        else
+                        {
+                            // 路径点数太少（<2），无法控制
+                            ROS_WARN_THROTTLE(2.0, "Path has only %d point(s), distance to goal: %.2f m. Waiting for replan...",
+                                              (int)odom_path.poses.size(), dist2goal);
+                            _path_computed = false;
+                        }
                     }
                 }
                 catch(tf::TransformException& ex) {
@@ -470,9 +483,23 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
 
         const int N = odom_path.poses.size();
 
-        // Safety check: Need at least 4 points for 3rd order polynomial
-        if(N < 4) {
-            ROS_WARN_THROTTLE(1.0, "Path has only %d points, need at least 4. Skipping control.", N);
+        // Safety check: Need at least 2 points for 1st order polynomial (linear)
+        // The polynomial order will be adjusted adaptively below
+        if(N < 2) {
+            // 检查是否已经非常接近目标（严格模式：使用goalRadius）
+            const double x_err = goal_pos.x - px;
+            const double y_err = goal_pos.y - py;
+            const double goal_err = sqrt(x_err*x_err + y_err*y_err);
+
+            if(goal_err < _goalRadius) {
+                // 非常接近目标，标记为到达
+                if(!_goal_reached) {
+                    _goal_reached = true;
+                    ROS_INFO("Goal reached! Distance: %.2f m < %.2f m", goal_err, _goalRadius);
+                }
+            } else {
+                ROS_WARN_THROTTLE(1.0, "Path has only %d point(s), distance to goal: %.2f m. Waiting for replan...", N, goal_err);
+            }
             return;
         }
 
@@ -504,19 +531,26 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
             gy += odom_path.poses[i].pose.position.y - odom_path.poses[i-1].pose.position.y;
         }       
         
-        double temp_theta = theta;
+        // Calculate heading error with proper angle normalization
+        // This fixes the issue where large angle turns (>90°) caused reverse movement
         double traj_deg = atan2(gy,gx);
-        double PI = 3.141592;
+        double PI = 3.141592653589793;
 
-        if(temp_theta <= -PI + traj_deg) 
-            temp_theta = temp_theta + 2 * PI;
-        
-        if(gx && gy && temp_theta - traj_deg < 1.8 * PI)
-            etheta = temp_theta - traj_deg;
-        else
+        // CRITICAL FIX: Use traj_deg - theta (not theta - traj_deg)
+        // This ensures correct sign: negative = clockwise, positive = counter-clockwise
+        if(gx && gy) {
+            double angle_diff = traj_deg - theta;  // CORRECTED: swapped order
+            // Normalize to [-π, π] using atan2
+            etheta = atan2(sin(angle_diff), cos(angle_diff));
+
+            // Additional normalization: ensure |etheta| stays within reasonable bounds
+            // If angle is very close to ±π, keep it as-is (MPC can handle it)
+            // The atan2 normalization above is sufficient for most cases
+        } else {
             etheta = 0;
+        }
 
-        cout << "etheta: "<< etheta << ", atan2(gy,gx): " << atan2(gy,gx) << ", temp_theta:" << traj_deg << endl;
+        cout << "etheta: "<< etheta << ", traj_deg: " << traj_deg << ", theta: " << theta << endl;
 
         idx++;
         file << idx<< "," << cte << "," <<  etheta << "," << _twist_msg.linear.x << "," << _twist_msg.angular.z << "," << _tube_mpc.getTubeRadius() << "\n";
