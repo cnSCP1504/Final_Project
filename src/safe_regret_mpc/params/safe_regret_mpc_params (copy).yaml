@@ -12,11 +12,11 @@ system:
 mpc:
   horizon: 20                  # Prediction horizon N
   ref_vel: 0.5                 # Reference velocity (m/s)
-  max_angvel: 3.5             # Maximum angular velocity (rad/s)
+  max_angvel: 1.5             # Maximum angular velocity (rad/s)
 
   # Cost weights
-  w_cte: 100.0                 # Cross-track error weight
-  w_etheta: 100.0              # Heading error weight
+  w_cte: 10.0                 # Cross-track error weight
+  w_etheta: 10.0              # Heading error weight
   w_vel: 5.0                  # Velocity weight
   w_angvel: 10.0              # Angular velocity weight
   w_accel: 5.0                # Acceleration weight

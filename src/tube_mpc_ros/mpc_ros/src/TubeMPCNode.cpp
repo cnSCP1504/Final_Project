@@ -89,6 +89,7 @@ TubeMPCNode::TubeMPCNode()
     _goal_received = false;
     _goal_reached  = false;
     _path_computed = false;
+    _in_place_rotation = false;  // 初始化原地旋转标志
     _throttle = 0.0;
     _w = 0.0;
     _w_filtered = 0.0;
@@ -536,21 +537,33 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         double traj_deg = atan2(gy,gx);
         double PI = 3.141592653589793;
 
-        // CRITICAL FIX: Use traj_deg - theta (not theta - traj_deg)
-        // This ensures correct sign: negative = clockwise, positive = counter-clockwise
+        // CRITICAL FIX: Properly handle large angle turns
+        // Keep the true angle difference, but detect when we need in-place rotation
         if(gx && gy) {
-            double angle_diff = traj_deg - theta;  // CORRECTED: swapped order
-            // Normalize to [-π, π] using atan2
-            etheta = atan2(sin(angle_diff), cos(angle_diff));
+            double angle_diff = traj_deg - theta;
 
-            // Additional normalization: ensure |etheta| stays within reasonable bounds
-            // If angle is very close to ±π, keep it as-is (MPC can handle it)
-            // The atan2 normalization above is sufficient for most cases
+            // Normalize to [-π, π]
+            while (angle_diff > PI) angle_diff -= 2 * PI;
+            while (angle_diff < -PI) angle_diff += 2 * PI;
+
+            etheta = angle_diff;
+
+            // Detect large angle turns that require special handling
+            if (fabs(angle_diff) > PI / 2.0) {
+                // Log the large angle turn
+                static int large_turn_counter = 0;
+                if(large_turn_counter++ % 20 == 0) {
+                    cout << "⚠️  Large angle turn detected: " << (angle_diff * 180.0 / PI)
+                         << "°, enabling in-place rotation mode" << endl;
+                }
+            }
         } else {
             etheta = 0;
         }
 
-        cout << "etheta: "<< etheta << ", traj_deg: " << traj_deg << ", theta: " << theta << endl;
+        cout << "etheta: "<< etheta << " (" << (etheta * 180.0 / PI) << "°), traj_deg: " << traj_deg
+             << " (" << (traj_deg * 180.0 / PI) << "°), theta: " << theta
+             << " (" << (theta * 180.0 / PI) << "°)" << endl;
 
         idx++;
         file << idx<< "," << cte << "," <<  etheta << "," << _twist_msg.linear.x << "," << _twist_msg.angular.z << "," << _tube_mpc.getTubeRadius() << "\n";
@@ -625,6 +638,26 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
 
         _w_filtered = 0.5 * _w_filtered + 0.5 * _w;
 
+        // === CRITICAL FIX: 纠正大角度转向时的角速度方向 ===
+        // 当etheta很大时（>90度），MPC可能会选择"最短路径"但方向错误
+        // 我们需要强制纠正角速度的方向
+        if(std::abs(etheta) > 1.57) {  // > 90度
+            // 计算期望的旋转方向
+            double desired_angular_direction = (etheta > 0) ? 1.0 : -1.0;
+
+            // 如果MPC输出的角速度方向与期望方向相反，强制纠正
+            if((_w_filtered * desired_angular_direction) < 0) {
+                double old_w = _w_filtered;
+                _w_filtered = -_w_filtered;  // 反转角速度方向
+
+                cout << "🔄 CORRECTING ANGULAR VELOCITY DIRECTION" << endl;
+                cout << "   etheta: " << etheta << " rad (" << (etheta * 180.0 / M_PI) << " deg)" << endl;
+                cout << "   MPC w: " << old_w << " rad/s" << endl;
+                cout << "   Corrected w: " << _w_filtered << " rad/s" << endl;
+                cout << "   Reason: MPC chose wrong direction (shortest path)" << endl;
+            }
+        }
+
         // 速度计算前的调试信息
         if(debug_counter % 20 == 0) {  // 每2秒输出一次详细信息
             cout << "=== MPC Results ===" << endl;
@@ -645,31 +678,48 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         }
 
         // === 智能转向策略：避免倒退 ===
-        // 暂时禁用以排查问题
-        /*
+        // 当大角度误差时，强制机器人原地旋转而不是沿反方向前进
         const double HEADING_ERROR_THRESHOLD = 1.05;  // 60度 (弧度)
         const double HEADING_ERROR_CRITICAL = 1.57;   // 90度 (弧度)
+        const double HEADING_ERROR_EXIT = 0.524;      // 30度 (弧度) - 退出原地旋转的阈值
 
-        if(std::abs(etheta) > HEADING_ERROR_THRESHOLD) {
-            // 航向误差过大，进入转向优先模式
-            if(std::abs(etheta) > HEADING_ERROR_CRITICAL) {
-                // 严重偏离：完全停止前进，只旋转
-                _speed = 0.0;
-                if(debug_counter % 20 == 0) {
-                    cout << "⚠️  CRITICAL HEADING ERROR: Pure rotation mode" << endl;
-                    cout << "   etheta: " << etheta << " rad (" << (etheta * 180.0 / M_PI) << " deg)" << endl;
-                }
-            } else {
-                // 中等偏离：大幅减速，允许慢速转向
-                _speed = _speed * 0.2;  // 降低到20%
-                if(debug_counter % 20 == 0) {
-                    cout << "⚠️  High heading error: Reduced speed for turning" << endl;
-                    cout << "   etheta: " << etheta << " rad (" << (etheta * 180.0 / M_PI) << " deg)" << endl;
-                    cout << "   Speed reduced to: " << _speed << " m/s" << endl;
-                }
+        // === 原地旋转状态机 ===
+        if(std::abs(etheta) > HEADING_ERROR_CRITICAL) {
+            // 进入原地旋转模式
+            if(!_in_place_rotation) {
+                _in_place_rotation = true;
+                cout << "🔄 ENTERING pure rotation mode" << endl;
+            }
+        } else if(_in_place_rotation && std::abs(etheta) < HEADING_ERROR_EXIT) {
+            // 退出原地旋转模式（只有误差足够小才退出）
+            _in_place_rotation = false;
+            cout << "✅ EXITING pure rotation mode" << endl;
+        }
+
+        // === 应用速度限制 ===
+        if(_in_place_rotation) {
+            // 原地旋转模式：速度必须为0
+            double old_speed = _speed;
+            _speed = 0.0;
+            if(debug_counter % 5 == 0) {
+                cout << "🔄 PURE ROTATION MODE ACTIVE" << endl;
+                cout << "   etheta: " << etheta << " rad (" << (etheta * 180.0 / M_PI) << " deg)" << endl;
+                cout << "   Exit threshold: " << HEADING_ERROR_EXIT << " rad (30 deg)" << endl;
+                cout << "   Speed: " << old_speed << " → 0.0 m/s" << endl;
+            }
+        } else if(std::abs(etheta) > HEADING_ERROR_THRESHOLD) {
+            // 中等偏离：大幅减速，允许慢速转向
+            double old_speed = _speed;
+            _speed = _speed * 0.2;  // 降低到20%
+            cout << "⚠️  High heading error: Speed reduced" << endl;
+            cout << "   etheta: " << etheta << " rad (" << (etheta * 180.0 / M_PI) << " deg)" << endl;
+            cout << "   Speed: " << old_speed << " → " << _speed << " m/s" << endl;
+        } else {
+            // 正常模式
+            if(debug_counter % 20 == 0) {
+                cout << "✓ Normal operation mode" << endl;
             }
         }
-        */
 
         // === Collect Metrics ===
         Metrics::MetricsCollector::MetricsSnapshot snapshot;
@@ -728,8 +778,23 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         }
         if (_speed >= _max_speed)
             _speed = _max_speed;
-        if(_speed < 0.3)  // 最小速度阈值
-            _speed = 0.3;
+
+        // ⚠️ CRITICAL FIX: 在应用最小速度阈值之前，检查是否处于原地旋转模式
+        // 如果处于原地旋转模式（pure_rotation_mode=true），则跳过最小速度阈值
+        // 这个标志在智能转向策略中设置
+        bool pure_rotation_mode = (std::abs(etheta) > 1.57);  // etheta > 90度
+
+        if(!pure_rotation_mode) {
+            // 正常模式：应用最小速度阈值
+            if(_speed < 0.3) {  // 最小速度阈值
+                _speed = 0.3;
+            }
+        } else {
+            // 原地旋转模式：允许速度为0
+            if(debug_counter % 5 == 0) {
+                cout << "🔄 Pure rotation mode: Min speed threshold disabled" << endl;
+            }
+        }
 
         if(_debug_info)
         {
@@ -788,6 +853,8 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
     if(_pub_twist_flag)
     {
         _twist_msg.linear.x  = _speed;
+
+
         _twist_msg.angular.z = _w_filtered;
         _pub_twist.publish(_twist_msg);
 
