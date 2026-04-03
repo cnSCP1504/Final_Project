@@ -65,10 +65,10 @@
       <param name="risk_allocation_strategy" value="uniform"/>
       <param name="ambiguity_strategy" value="wasserstein_ball"/>
       <param name="confidence_level" value="0.9"/>
-      <param name="tube_radius" value="0.08"/>  <!-- Further reduced to 0.08 for tighter navigation -->
+      <param name="tube_radius" value="0.18"/>  <!-- 增加到18cm，提高安全性（原8cm） -->
       <param name="lipschitz_constant" value="1.0"/>
-      <param name="safety_buffer" value="0.08"/>  <!-- Reduced to 0.08 for 0.75m target -->
-      <param name="obstacle_influence_radius" value="1.5"/>  <!-- Reduced to 1.5m -->
+      <param name="safety_buffer" value="0.18"/>  <!-- 增加到18cm，提高安全性（原8cm） -->
+      <param name="obstacle_influence_radius" value="1.6"/>  <!-- 增加到1.6m，提高安全性（原1.5m） -->
       <param name="update_rate" value="10.0"/>
       <param name="enable_visualization" value="true"/>
       <param name="enable_debug_output" value="false"/>

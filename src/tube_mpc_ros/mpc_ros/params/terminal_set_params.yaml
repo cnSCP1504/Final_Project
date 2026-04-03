@@ -58,8 +58,8 @@ visualization:
 
 # Safety margins
 safety:
-  margin: 0.5  # Additional safety margin for terminal set (meters)
-  tube_compensation: 0.1  # Tube error compensation η_ℰ (meters)
+  margin: 0.6  # Additional safety margin for terminal set (meters) - 增加到60cm，提高安全性（原50cm）
+  tube_compensation: 0.15  # Tube error compensation η_ℰ (meters) - 增加到15cm，提高安全性（原10cm）
 
 # Recursive feasibility checking
 feasibility:

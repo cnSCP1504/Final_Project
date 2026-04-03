@@ -47,7 +47,7 @@ MPCPlannerROS:
   mpc_max_angvel: 2.0
   mpc_max_throttle: 10.0  # 大幅提高throttle上限，从2.0提高到10.0
   mpc_bound_value: 1.0e3
-  disturbance_bound: 0.15
+  disturbance_bound: 0.20  # 增加到0.20，提高安全性（原0.15）
   enable_adaptive_disturbance: true
   disturbance_window_size: 100
   tube_visualization: true

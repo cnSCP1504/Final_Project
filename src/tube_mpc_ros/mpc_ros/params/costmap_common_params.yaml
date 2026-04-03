@@ -15,7 +15,7 @@ obstacle_layer:
  enabled: true
  obstacle_range: 3.0
  raytrace_range: 3.5
- inflation_radius: 0.25
+ inflation_radius: 0.35  # 增加到35cm，提高安全性（原25cm）
  track_unknown_space: false
  combination_method: 1
 
@@ -26,7 +26,7 @@ obstacle_layer:
 inflation_layer:
   enabled:              true
   cost_scaling_factor:  10.0  # exponential rate at which the obstacle cost drops off (default: 10)
-  inflation_radius:     0.25  # max. distance from an obstacle at which costs are incurred for planning paths (set to 0.25 for balanced safety)
+  inflation_radius:     0.35  # max. distance from an obstacle at which costs are incurred for planning paths (increased to 35cm for better safety)
 
 static_layer:
   enabled:              true
