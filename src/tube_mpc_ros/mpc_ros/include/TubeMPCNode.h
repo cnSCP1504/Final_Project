@@ -73,6 +73,8 @@ class TubeMPCNode
         int _controller_freq, _downSampling, _thread_numbers;
         bool _goal_received, _goal_reached, _path_computed, _pub_twist_flag, _debug_info;
         bool _in_place_rotation;  // 标记是否正在原地旋转模式
+        double _rotation_direction;  // 锁定的旋转方向 (1.0 或 -1.0)
+        bool _rotation_direction_locked;  // 旋转方向是否已锁定
 
         // Safe-Regret MPC Integration
         bool _enable_safe_regret_integration;  // 是否启用safe_regret_mpc集成模式

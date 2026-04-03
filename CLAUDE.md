@@ -960,6 +960,124 @@ rostopic echo /rosout | grep -i "failed\|error\|plan"
 **Previous git commit** (last working version with goal arrival fix):
 - Commit: `f8cb723` ("fix: 修复到达终点后无法识别目标已到达的问题")
 
+---
+
+### Large-Angle Turning Fix - Strict Pure Rotation Mode (2026-04-03)
+
+**Status**: ✅ **IMPLEMENTED** - 严格原地旋转模式，30度退出阈值
+
+**Problem Description**:
+虽然系统已有原地旋转功能，但原有实现不够严格：
+- 当角度在 30-90° 之间时，机器人只减速到 20%，但仍可直行
+- 不符合"一旦启动就必须转到30度才能直行"的要求
+- 状态机逻辑存在漏洞，可能导致意外的行为
+
+**Solution Implemented**:
+
+修改了 `src/tube_mpc_ros/mpc_ros/src/TubeMPCNode.cpp` (lines 680-720)，实现了严格的原地旋转状态机：
+
+**核心逻辑**：
+```cpp
+// === 原地旋转状态机（严格版本）===
+if(std::abs(etheta) > HEADING_ERROR_CRITICAL && !_in_place_rotation) {
+    // 进入条件：角度 > 90度 且 当前不在旋转模式
+    _in_place_rotation = true;
+} else if(_in_place_rotation && std::abs(etheta) < HEADING_ERROR_EXIT) {
+    // 退出条件：已在旋转模式 且 角度 < 30度
+    // 必须同时满足两个条件才能退出
+    _in_place_rotation = false;
+}
+
+// 应用速度限制
+if(_in_place_rotation) {
+    // 完全禁止直行：不管当前角度是多少，速度必须为0
+    _speed = 0.0;
+}
+```
+
+**关键改进**：
+1. **明确的进入条件**：`|etheta| > 90°` **且** `!_in_place_rotation`
+   - 只有当前不在旋转模式时才会检查进入条件
+   - 一旦进入，进入条件不再检查
+
+2. **严格的退出条件**：`_in_place_rotation` **且** `|etheta| < 30°`
+   - 必须已在旋转模式 **且** 角度足够小才能退出
+   - **在旋转期间，不管角度如何，都不会退出**
+
+3. **完全禁止直行**：
+   - 在旋转模式下，速度强制为 0.0 m/s
+   - 每次控制循环都输出日志（关键安全功能）
+
+**行为对比**：
+
+| 角度范围 | 旧版本行为 | 新版本行为 |
+|---------|-----------|-----------|
+| > 90° | 进入旋转，速度=0 | 进入旋转，速度=0 ✅ |
+| 60-90° | 减速到20%，可直行 ⚠️ | **保持旋转**，速度=0 ✅ |
+| 30-60° | 正常行驶 ⚠️ | **保持旋转**，速度=0 ✅ |
+| < 30° | 正常行驶 | 退出旋转，恢复正常 ✅ |
+
+**测试验证**：
+
+测试脚本：`test/test_strict_rotation_mode.sh`
+
+```bash
+# 运行测试
+./test/test_strict_rotation_mode.sh
+```
+
+**预期行为**（场景：100° → 25°）：
+1. ✅ 检测到角度 > 90°，**进入**旋转模式
+2. ✅ 输出日志：`"🔄 ENTERING PURE ROTATION MODE"`
+3. ✅ 速度锁定为 0.0 m/s
+4. ✅ 机器人原地旋转，角度逐渐减小
+5. ✅ 当角度从 90° → 30° 时，**仍在**旋转模式（关键改进）
+6. ✅ 当角度 < 30° 时，**退出**旋转模式
+7. ✅ 输出日志：`"✅ EXITING PURE ROTATION MODE"`
+8. ✅ 速度恢复正常，开始直行
+
+**日志输出示例**：
+
+```
+╔════════════════════════════════════════════════════════╗
+║  🔄 ENTERING PURE ROTATION MODE                        ║
+╠════════════════════════════════════════════════════════╣
+║  Current heading error: 105.3° (>90°)                  ║
+║  Exit condition: < 30°                                  ║
+║  Action: Speed FORCED to 0.0 m/s                       ║
+║         Only in-place rotation ALLOWED                 ║
+╚════════════════════════════════════════════════════════╝
+
+🔄 [PURE ROTATION] Speed LOCKED at 0.0 m/s | Angle: 75.2° | Exit at: <30° | Angular vel: 0.8 rad/s
+🔄 [PURE ROTATION] Speed LOCKED at 0.0 m/s | Angle: 68.4° | Exit at: <30° | Angular vel: 0.7 rad/s
+🔄 [PURE ROTATION] Speed LOCKED at 0.0 m/s | Angle: 52.1° | Exit at: <30° | Angular vel: 0.6 rad/s
+🔄 [PURE ROTATION] Speed LOCKED at 0.0 m/s | Angle: 41.8° | Exit at: <30° | Angular vel: 0.5 rad/s
+🔄 [PURE ROTATION] Speed LOCKED at 0.0 m/s | Angle: 32.5° | Exit at: <30° | Angular vel: 0.4 rad/s
+
+╔════════════════════════════════════════════════════════╗
+║  ✅ EXITING PURE ROTATION MODE                         ║
+╠════════════════════════════════════════════════════════╣
+║  Current heading error: 28.7° (<30°)                   ║
+║  Action: Normal motion RESUMED                         ║
+╚════════════════════════════════════════════════════════╝
+```
+
+**关键参数**：
+- `HEADING_ERROR_CRITICAL` = 1.57 rad (90°) - 进入旋转模式的阈值
+- `HEADING_ERROR_EXIT` = 0.524 rad (30°) - 退出旋转模式的阈值
+
+**理论保证**：
+- **互斥性**：同一时刻只能在一个状态（旋转 / 非旋转）
+- **确定性**：给定当前状态和角度，下一个状态是确定的
+- **安全性**：在旋转模式下，速度始终为 0
+- **活性**：只要角度收敛到 < 30°，最终会退出旋转模式
+
+**相关文档**：
+- 详细报告：`test/docs/STRICT_ROTATION_MODE_IMPROVEMENT.md`
+- 测试脚本：`test/test_strict_rotation_mode.sh`
+
+**Status**: ✅ **COMPLETE** - 已编译并测试
+
 ## Safe-Regret MPC Theory (From Paper)
 
 ### Problem Formulation

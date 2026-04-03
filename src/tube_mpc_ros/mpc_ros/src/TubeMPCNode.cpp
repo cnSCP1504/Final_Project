@@ -90,6 +90,8 @@ TubeMPCNode::TubeMPCNode()
     _goal_reached  = false;
     _path_computed = false;
     _in_place_rotation = false;  // 初始化原地旋转标志
+    _rotation_direction = 0.0;   // 初始化旋转方向
+    _rotation_direction_locked = false;  // 初始化方向锁定标志
     _throttle = 0.0;
     _w = 0.0;
     _w_filtered = 0.0;
@@ -638,24 +640,30 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
 
         _w_filtered = 0.5 * _w_filtered + 0.5 * _w;
 
-        // === CRITICAL FIX: 纠正大角度转向时的角速度方向 ===
-        // 当etheta很大时（>90度），MPC可能会选择"最短路径"但方向错误
-        // 我们需要强制纠正角速度的方向
-        if(std::abs(etheta) > 1.57) {  // > 90度
-            // 计算期望的旋转方向
-            double desired_angular_direction = (etheta > 0) ? 1.0 : -1.0;
-
-            // 如果MPC输出的角速度方向与期望方向相反，强制纠正
-            if((_w_filtered * desired_angular_direction) < 0) {
-                double old_w = _w_filtered;
-                _w_filtered = -_w_filtered;  // 反转角速度方向
-
-                cout << "🔄 CORRECTING ANGULAR VELOCITY DIRECTION" << endl;
-                cout << "   etheta: " << etheta << " rad (" << (etheta * 180.0 / M_PI) << " deg)" << endl;
-                cout << "   MPC w: " << old_w << " rad/s" << endl;
-                cout << "   Corrected w: " << _w_filtered << " rad/s" << endl;
-                cout << "   Reason: MPC chose wrong direction (shortest path)" << endl;
+        // === 原地旋转模式：锁定旋转方向 ===
+        // 在原地旋转模式下，必须保持一致的旋转方向，不能左右摇摆
+        // 这解决了在90度边界上的角速度冲突问题
+        if(_in_place_rotation) {
+            if(!_rotation_direction_locked) {
+                // 第一次进入旋转模式，确定并锁定旋转方向
+                _rotation_direction = (etheta > 0) ? 1.0 : -1.0;
+                _rotation_direction_locked = true;
+                cout << "[ROTATION] Direction LOCKED: " << (_rotation_direction > 0 ? "CCW (+)" : "CW (-)") << endl;
             }
+
+            // 强制角速度方向与锁定方向一致
+            // 这防止MPC在角度变化时选择反向（最短路径）
+            if((_w_filtered * _rotation_direction) < 0) {
+                // MPC选择了反向，强制纠正
+                double old_w = _w_filtered;
+                _w_filtered = _rotation_direction * std::abs(_w_filtered);
+                if(debug_counter % 5 == 0) {
+                    cout << "[ROTATION] Direction corrected: " << old_w << " -> " << _w_filtered << endl;
+                }
+            }
+        } else {
+            // 非旋转模式，重置方向锁定
+            _rotation_direction_locked = false;
         }
 
         // 速度计算前的调试信息
@@ -677,47 +685,42 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
             cout << "Computed speed (before limits): " << _speed << endl;
         }
 
-        // === 智能转向策略：避免倒退 ===
-        // 当大角度误差时，强制机器人原地旋转而不是沿反方向前进
-        const double HEADING_ERROR_THRESHOLD = 1.05;  // 60度 (弧度)
-        const double HEADING_ERROR_CRITICAL = 1.57;   // 90度 (弧度)
+        // === 智能转向策略：严格的原地旋转控制 ===
+        // 核心逻辑：一旦进入原地旋转模式（>90度），必须转到角度<30度才能退出
+        // 在此期间完全禁止直行，只能原地转弯
+        const double HEADING_ERROR_THRESHOLD = 1.05;  // 60度 (弧度) - 仅用于非旋转模式的减速
+        const double HEADING_ERROR_CRITICAL = 1.57;   // 90度 (弧度) - 进入原地旋转的阈值
         const double HEADING_ERROR_EXIT = 0.524;      // 30度 (弧度) - 退出原地旋转的阈值
 
-        // === 原地旋转状态机 ===
-        if(std::abs(etheta) > HEADING_ERROR_CRITICAL) {
+        // === 原地旋转状态机（严格版本）===
+        if(std::abs(etheta) > HEADING_ERROR_CRITICAL && !_in_place_rotation) {
+            // 触发条件：角度 > 90度 且 当前不在旋转模式
             // 进入原地旋转模式
-            if(!_in_place_rotation) {
-                _in_place_rotation = true;
-                cout << "🔄 ENTERING pure rotation mode" << endl;
-            }
+            _in_place_rotation = true;
+            cout << "[ROTATION] ENTERING pure rotation mode (" << (etheta * 180.0 / M_PI) << "° > 90°)" << endl;
         } else if(_in_place_rotation && std::abs(etheta) < HEADING_ERROR_EXIT) {
-            // 退出原地旋转模式（只有误差足够小才退出）
+            // 退出条件：已在旋转模式 且 角度 < 30度
+            // 注意：必须同时满足两个条件才能退出
             _in_place_rotation = false;
-            cout << "✅ EXITING pure rotation mode" << endl;
+            cout << "[ROTATION] EXITING pure rotation mode (" << (etheta * 180.0 / M_PI) << "° < 30°)" << endl;
         }
 
-        // === 应用速度限制 ===
+        // === 应用速度限制（严格版本）===
         if(_in_place_rotation) {
-            // 原地旋转模式：速度必须为0
-            double old_speed = _speed;
+            // 🚫 原地旋转模式：完全禁止直行
+            // 不管当前角度是多少，只要在旋转模式，速度必须为0
             _speed = 0.0;
-            if(debug_counter % 5 == 0) {
-                cout << "🔄 PURE ROTATION MODE ACTIVE" << endl;
-                cout << "   etheta: " << etheta << " rad (" << (etheta * 180.0 / M_PI) << " deg)" << endl;
-                cout << "   Exit threshold: " << HEADING_ERROR_EXIT << " rad (30 deg)" << endl;
-                cout << "   Speed: " << old_speed << " → 0.0 m/s" << endl;
+
+            // 每10次控制循环输出一次状态
+            if(debug_counter % 10 == 0) {
+                cout << "[ROTATION] Speed=0.0 | Angle=" << (etheta * 180.0 / M_PI) << "° | Exit<30° | w=" << _w_filtered << endl;
             }
         } else if(std::abs(etheta) > HEADING_ERROR_THRESHOLD) {
-            // 中等偏离：大幅减速，允许慢速转向
-            double old_speed = _speed;
+            // ⚠️ 非旋转模式下的大角度偏差（60-90度）：减速但不停止
+            // 注意：这种情况只会在未进入旋转模式时发生
             _speed = _speed * 0.2;  // 降低到20%
-            cout << "⚠️  High heading error: Speed reduced" << endl;
-            cout << "   etheta: " << etheta << " rad (" << (etheta * 180.0 / M_PI) << " deg)" << endl;
-            cout << "   Speed: " << old_speed << " → " << _speed << " m/s" << endl;
-        } else {
-            // 正常模式
-            if(debug_counter % 20 == 0) {
-                cout << "✓ Normal operation mode" << endl;
+            if(debug_counter % 10 == 0) {
+                cout << "[SLOW] Speed reduced to 20% | Angle=" << (etheta * 180.0 / M_PI) << "°" << endl;
             }
         }
 
@@ -780,21 +783,16 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
             _speed = _max_speed;
 
         // ⚠️ CRITICAL FIX: 在应用最小速度阈值之前，检查是否处于原地旋转模式
-        // 如果处于原地旋转模式（pure_rotation_mode=true），则跳过最小速度阈值
-        // 这个标志在智能转向策略中设置
-        bool pure_rotation_mode = (std::abs(etheta) > 1.57);  // etheta > 90度
+        // 使用状态机标志 _in_place_rotation 而不是独立的角度判断
+        // 这确保一旦进入旋转模式，必须等到<30度才能退出
 
-        if(!pure_rotation_mode) {
+        if(!_in_place_rotation) {
             // 正常模式：应用最小速度阈值
             if(_speed < 0.3) {  // 最小速度阈值
                 _speed = 0.3;
             }
-        } else {
-            // 原地旋转模式：允许速度为0
-            if(debug_counter % 5 == 0) {
-                cout << "🔄 Pure rotation mode: Min speed threshold disabled" << endl;
-            }
         }
+        // 原地旋转模式：允许速度为0（已在上面设置为0）
 
         if(_debug_info)
         {
