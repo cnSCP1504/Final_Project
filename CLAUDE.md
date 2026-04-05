@@ -1457,3 +1457,4 @@ rm -rf build/safe_regret_mpc devel/lib/safe_regret_mpc
 catkin_make --only-pkg-with-deps safe_regret_mpc
 source devel/setup.bash
 ```
+打开全功能后那个大角度自动原地转弯的功能失效了

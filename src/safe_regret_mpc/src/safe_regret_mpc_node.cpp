@@ -17,6 +17,9 @@ SafeRegretMPCNode::SafeRegretMPCNode(ros::NodeHandle& nh, ros::NodeHandle& priva
       system_ready_(false),
       odom_received_(false),
       plan_received_(false),
+      goal_received_(false),
+      goal_reached_(false),
+      goal_radius_(0.5),  // Default 0.5m threshold
       tube_mpc_cmd_received_(false),
       tube_mpc_traj_received_(false),
       tube_mpc_error_received_(false),
@@ -26,6 +29,13 @@ SafeRegretMPCNode::SafeRegretMPCNode(ros::NodeHandle& nh, ros::NodeHandle& priva
 }
 
 SafeRegretMPCNode::~SafeRegretMPCNode() {
+    // Stop timers to prevent callbacks from accessing destroyed members
+    try {
+        control_timer_.stop();
+        publish_timer_.stop();
+    } catch (...) {
+        // Ignore exceptions during shutdown
+    }
 }
 
 // ========== Initialization ==========
@@ -35,6 +45,9 @@ bool SafeRegretMPCNode::initialize() {
 
     // Load parameters
     loadParameters();
+
+    // Create TF listener
+    tf_listener_ = std::make_shared<tf::TransformListener>();
 
     // Create MPC solver
     mpc_solver_ = std::make_unique<SafeRegretMPC>();
@@ -129,6 +142,9 @@ void SafeRegretMPCNode::loadParameters() {
 
     // Integration mode parameters
     private_nh_.param("enable_integration_mode", enable_integration_mode_, true);
+
+    // Goal parameters
+    private_nh_.param("goal_radius", goal_radius_, 0.5);  // 0.5m default arrival threshold
 
     // MPC parameters
     private_nh_.param("mpc_steps", mpc_steps_, 20);
@@ -266,6 +282,8 @@ void SafeRegretMPCNode::globalPlanCallback(const nav_msgs::Path::ConstPtr& msg) 
 
 void SafeRegretMPCNode::goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
     current_goal_ = *msg;
+    goal_received_ = true;
+    goal_reached_ = false;  // Reset goal reached flag for new goal
     ROS_INFO("Received goal: (%.2f, %.2f)",
              msg->pose.position.x, msg->pose.position.y);
 }
@@ -431,6 +449,66 @@ void SafeRegretMPCNode::controlTimerCallback(const ros::TimerEvent& event) {
         return;
     }
 
+    // CRITICAL: Check if goal has been reached
+    if (goal_received_ && goal_reached_) {
+        // Stop the robot when goal is reached
+        geometry_msgs::Twist stop_cmd;
+        stop_cmd.linear.x = 0.0;
+        stop_cmd.linear.y = 0.0;
+        stop_cmd.linear.z = 0.0;
+        stop_cmd.angular.x = 0.0;
+        stop_cmd.angular.y = 0.0;
+        stop_cmd.angular.z = 0.0;
+        publishFinalCommand(stop_cmd);
+
+        if (debug_mode_) {
+            ROS_DEBUG_THROTTLE(2.0, "Goal reached. Stopping robot.");
+        }
+        return;
+    }
+
+    // Check if we should continue toward goal
+    if (goal_received_ && !goal_reached_) {
+        // Calculate distance to goal
+        try {
+            if (!tf_listener_) {
+                ROS_WARN_THROTTLE(2.0, "TF listener not initialized!");
+                return;
+            }
+
+            tf::StampedTransform transform;
+            tf_listener_->lookupTransform(global_frame_, robot_base_frame_,
+                                         ros::Time(0), transform);
+
+            double robot_x = transform.getOrigin().x();
+            double robot_y = transform.getOrigin().y();
+
+            double goal_x = current_goal_.pose.position.x;
+            double goal_y = current_goal_.pose.position.y;
+
+            double dist_to_goal = std::sqrt(
+                std::pow(robot_x - goal_x, 2) +
+                std::pow(robot_y - goal_y, 2)
+            );
+
+            // Check if goal is reached
+            if (dist_to_goal < goal_radius_) {
+                goal_reached_ = true;
+                ROS_INFO("Goal reached! Distance: %.2f m < %.2f m",
+                         dist_to_goal, goal_radius_);
+
+                // Stop the robot
+                geometry_msgs::Twist stop_cmd;
+                stop_cmd.linear.x = 0.0;
+                stop_cmd.angular.z = 0.0;
+                publishFinalCommand(stop_cmd);
+                return;
+            }
+        } catch (tf::TransformException& ex) {
+            ROS_WARN_THROTTLE(2.0, "Cannot check goal distance: %s", ex.what());
+        }
+    }
+
     // CRITICAL FIX: In integration mode with DR/STL enabled,
     // we should solve our own MPC to properly incorporate DR constraints and STL robustness
     // This aligns with the manuscript's theoretical framework
@@ -525,6 +603,16 @@ void SafeRegretMPCNode::solveMPC() {
         Eigen::VectorXd control = mpc_solver_->getOptimalControl();
         cmd_vel_.linear.x = control(0);
         cmd_vel_.angular.z = control(1);
+
+        // Log in-place rotation status
+        if (mpc_solver_->isInPlaceRotation()) {
+            ROS_INFO_THROTTLE(2.0, "🔄 [PURE ROTATION] Speed LOCKED at 0.0 m/s | "
+                                "Angular vel: %.3f rad/s | Exit at: <10°",
+                                cmd_vel_.angular.z);
+        } else {
+            ROS_DEBUG_THROTTLE(2.0, "✅ [NORMAL MOTION] v=%.3f m/s, w=%.3f rad/s",
+                               cmd_vel_.linear.x, cmd_vel_.angular.z);
+        }
 
         if (debug_mode_) {
             ROS_DEBUG("MPC solved: v=%.3f, w=%.3f", cmd_vel_.linear.x, cmd_vel_.angular.z);

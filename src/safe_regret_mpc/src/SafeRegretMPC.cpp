@@ -29,6 +29,7 @@ SafeRegretMPC::SafeRegretMPC()
       mpc_feasible_(false),
       solve_time_(0.0),
       cppad_initialized_(false),
+      in_place_rotation_(false),
       debug_mode_(false)
 {
     // Initialize integrators
@@ -188,6 +189,17 @@ bool SafeRegretMPC::solve(const VectorXd& current_state,
         for (size_t i = 0; i < input_dim_; ++i) {
             optimal_control_(i) = vars[state_dim_ + i];
         }
+
+        // ========== In-Place Rotation Control ==========
+        // Extract heading error (etheta) from current state
+        // State: [x, y, theta, v, cte, etheta]
+        double etheta = current_state(5);  // Index 5 is etheta
+
+        // Update rotation state machine
+        updateInPlaceRotation(etheta);
+
+        // Apply speed limit based on rotation state
+        applyRotationSpeedLimit(optimal_control_);
 
         std::cout << "MPC solved successfully in " << solve_time_ << " ms" << std::endl;
     } else {
@@ -372,6 +384,54 @@ void SafeRegretMPC::evaluateConstraints(const ADvector& vars, ADvector& fg) {
     // - Dynamics
     // - DR constraints
     // - Terminal set
+}
+
+// ========== In-Place Rotation Control ==========
+
+void SafeRegretMPC::updateInPlaceRotation(double etheta) {
+    // === Strict in-place rotation state machine ===
+    if (std::abs(etheta) > HEADING_ERROR_CRITICAL && !in_place_rotation_) {
+        // Entry condition: angle > 90° AND not currently in rotation mode
+        in_place_rotation_ = true;
+        std::cout << "\n╔════════════════════════════════════════════════════════╗\n"
+                  << "║  🔄 ENTERING PURE ROTATION MODE                        ║\n"
+                  << "╠════════════════════════════════════════════════════════╣\n"
+                  << "║  Current heading error: " << (std::abs(etheta) * 180.0 / M_PI) << "° (>90°)                  ║\n"
+                  << "║  Exit condition: < 10°                                  ║\n"
+                  << "║  Action: Speed FORCED to 0.0 m/s                       ║\n"
+                  << "║         Only in-place rotation ALLOWED                 ║\n"
+                  << "╚════════════════════════════════════════════════════════╝\n" << std::endl;
+    } else if (in_place_rotation_ && std::abs(etheta) < HEADING_ERROR_EXIT) {
+        // Exit condition: in rotation mode AND angle < 10°
+        // Note: Both conditions must be met to exit
+        in_place_rotation_ = false;
+        std::cout << "\n╔════════════════════════════════════════════════════════╗\n"
+                  << "║  ✅ EXITING PURE ROTATION MODE                         ║\n"
+                  << "╠════════════════════════════════════════════════════════╣\n"
+                  << "║  Current heading error: " << (std::abs(etheta) * 180.0 / M_PI) << "° (<10°)                   ║\n"
+                  << "║  Action: Normal motion RESUMED                         ║\n"
+                  << "╚════════════════════════════════════════════════════════╝\n" << std::endl;
+    }
+}
+
+void SafeRegretMPC::applyRotationSpeedLimit(VectorXd& control) {
+    if (control.size() < 2) {
+        std::cerr << "Warning: Control vector size < 2, cannot apply rotation limit" << std::endl;
+        return;
+    }
+
+    // control = [v, omega]
+    double& linear_vel = control(0);
+    double angular_vel = control(1);
+
+    if (in_place_rotation_) {
+        // 🚫 Pure rotation mode: completely prohibit forward motion
+        // Regardless of current angle, if in rotation mode, speed must be 0
+        linear_vel = 0.0;
+
+        std::cout << "🔄 [PURE ROTATION] Speed LOCKED at 0.0 m/s | "
+                  << "Angular vel: " << angular_vel << " rad/s" << std::endl;
+    }
 }
 
 } // namespace safe_regret_mpc

@@ -256,6 +256,14 @@ public:
      */
     void enableTerminalSet(bool enable) { terminal_set_enabled_ = enable; }
 
+    // ========== In-Place Rotation Control ==========
+
+    /**
+     * @brief Get current rotation state
+     * @return True if in in-place rotation mode
+     */
+    bool isInPlaceRotation() const { return in_place_rotation_; }
+
     /**
      * @brief Get debug information
      * @return Debug string
@@ -349,6 +357,31 @@ private:
     SizeVector nx_;               ///< Number of variables
     SizeVector ng_;               ///< Number of constraints
     SizeVector n_sample_;         ///< Number of sample points
+
+    // ========== In-Place Rotation Control ==========
+    /**
+     * @brief Smart turning strategy: strict in-place rotation control
+     *
+     * Core logic: Once entering in-place rotation mode (>90°),
+     * must rotate until angle <10° before exiting.
+     * During this period, forward motion is completely prohibited,
+     * only rotation is allowed.
+     */
+    bool in_place_rotation_;             ///< In-place rotation mode flag
+    static constexpr double HEADING_ERROR_CRITICAL = 1.57;   ///< 90° - Enter rotation threshold
+    static constexpr double HEADING_ERROR_EXIT = 0.175;      ///< 10° - Exit rotation threshold
+
+    /**
+     * @brief Update in-place rotation state machine
+     * @param etheta Current heading error (radians)
+     */
+    void updateInPlaceRotation(double etheta);
+
+    /**
+     * @brief Apply speed limit based on rotation state
+     * @param control Input/output control vector [v, ω]
+     */
+    void applyRotationSpeedLimit(VectorXd& control);
 
     // Debug
     bool debug_mode_;
