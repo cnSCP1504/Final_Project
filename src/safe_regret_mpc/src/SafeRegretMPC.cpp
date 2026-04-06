@@ -30,6 +30,8 @@ SafeRegretMPC::SafeRegretMPC()
       solve_time_(0.0),
       cppad_initialized_(false),
       in_place_rotation_(false),
+      rotation_direction_locked_(false),
+      locked_rotation_direction_(0.0),
       debug_mode_(false)
 {
     // Initialize integrators
@@ -198,8 +200,8 @@ bool SafeRegretMPC::solve(const VectorXd& current_state,
         // Update rotation state machine
         updateInPlaceRotation(etheta);
 
-        // Apply speed limit based on rotation state
-        applyRotationSpeedLimit(optimal_control_);
+        // Apply speed limit based on rotation state (pass etheta for angular velocity override)
+        applyRotationSpeedLimit(optimal_control_, etheta);
 
         std::cout << "MPC solved successfully in " << solve_time_ << " ms" << std::endl;
     } else {
@@ -393,11 +395,17 @@ void SafeRegretMPC::updateInPlaceRotation(double etheta) {
     if (std::abs(etheta) > HEADING_ERROR_CRITICAL && !in_place_rotation_) {
         // Entry condition: angle > 90° AND not currently in rotation mode
         in_place_rotation_ = true;
+
+        // ✅ LOCK rotation direction when entering rotation mode
+        rotation_direction_locked_ = true;
+        locked_rotation_direction_ = (etheta >= 0) ? -1.0 : 1.0;
+
         std::cout << "\n╔════════════════════════════════════════════════════════╗\n"
                   << "║  🔄 ENTERING PURE ROTATION MODE                        ║\n"
                   << "╠════════════════════════════════════════════════════════╣\n"
                   << "║  Current heading error: " << (std::abs(etheta) * 180.0 / M_PI) << "° (>90°)                  ║\n"
                   << "║  Exit condition: < 10°                                  ║\n"
+                  << "║  Direction LOCKED: " << (locked_rotation_direction_ > 0 ? "Clockwise" : "Counter-Clockwise") << "           ║\n"
                   << "║  Action: Speed FORCED to 0.0 m/s                       ║\n"
                   << "║         Only in-place rotation ALLOWED                 ║\n"
                   << "╚════════════════════════════════════════════════════════╝\n" << std::endl;
@@ -405,16 +413,22 @@ void SafeRegretMPC::updateInPlaceRotation(double etheta) {
         // Exit condition: in rotation mode AND angle < 10°
         // Note: Both conditions must be met to exit
         in_place_rotation_ = false;
+
+        // ✅ UNLOCK rotation direction when exiting
+        rotation_direction_locked_ = false;
+        locked_rotation_direction_ = 0.0;
+
         std::cout << "\n╔════════════════════════════════════════════════════════╗\n"
                   << "║  ✅ EXITING PURE ROTATION MODE                         ║\n"
                   << "╠════════════════════════════════════════════════════════╣\n"
                   << "║  Current heading error: " << (std::abs(etheta) * 180.0 / M_PI) << "° (<10°)                   ║\n"
+                  << "║  Direction UNLOCKED                                   ║\n"
                   << "║  Action: Normal motion RESUMED                         ║\n"
                   << "╚════════════════════════════════════════════════════════╝\n" << std::endl;
     }
 }
 
-void SafeRegretMPC::applyRotationSpeedLimit(VectorXd& control) {
+void SafeRegretMPC::applyRotationSpeedLimit(VectorXd& control, double etheta) {
     if (control.size() < 2) {
         std::cerr << "Warning: Control vector size < 2, cannot apply rotation limit" << std::endl;
         return;
@@ -429,8 +443,26 @@ void SafeRegretMPC::applyRotationSpeedLimit(VectorXd& control) {
         // Regardless of current angle, if in rotation mode, speed must be 0
         linear_vel = 0.0;
 
+        // ✅ FIX: Also override angular velocity to prevent MPC from "pulling back"
+        // MPC tries to compensate for zero linear speed by oscillating angular velocity
+        const double fixed_angular_vel = 0.5;  // rad/s (~29°/s)
+
+        // ✅ Use LOCKED rotation direction to prevent oscillation
+        double rotation_direction;
+        if (rotation_direction_locked_) {
+            rotation_direction = locked_rotation_direction_;  // ✅ Use locked direction
+        } else {
+            // Fallback: determine direction from etheta sign
+            rotation_direction = (etheta >= 0) ? -1.0 : 1.0;
+        }
+
+        angular_vel = rotation_direction * fixed_angular_vel;
+
         std::cout << "🔄 [PURE ROTATION] Speed LOCKED at 0.0 m/s | "
-                  << "Angular vel: " << angular_vel << " rad/s" << std::endl;
+                  << "Angular vel OVERRIDDEN to " << angular_vel << " rad/s ("
+                  << (angular_vel * 180.0 / M_PI) << "°/s) | "
+                  << "Direction " << (rotation_direction_locked_ ? "LOCKED" : "computed")
+                  << std::endl;
     }
 }
 

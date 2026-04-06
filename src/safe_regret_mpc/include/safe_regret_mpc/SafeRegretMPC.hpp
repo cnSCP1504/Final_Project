@@ -368,6 +368,8 @@ private:
      * only rotation is allowed.
      */
     bool in_place_rotation_;             ///< In-place rotation mode flag
+    bool rotation_direction_locked_;      ///< Rotation direction locked flag
+    double locked_rotation_direction_;    ///< Locked rotation direction (+1.0 or -1.0)
     static constexpr double HEADING_ERROR_CRITICAL = 1.57;   ///< 90° - Enter rotation threshold
     static constexpr double HEADING_ERROR_EXIT = 0.175;      ///< 10° - Exit rotation threshold
 
@@ -380,8 +382,9 @@ private:
     /**
      * @brief Apply speed limit based on rotation state
      * @param control Input/output control vector [v, ω]
+     * @param etheta Current heading error (radians) for determining rotation direction
      */
-    void applyRotationSpeedLimit(VectorXd& control);
+    void applyRotationSpeedLimit(VectorXd& control, double etheta);
 
     // Debug
     bool debug_mode_;
