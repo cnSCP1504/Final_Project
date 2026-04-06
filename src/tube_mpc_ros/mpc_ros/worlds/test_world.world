@@ -143,22 +143,22 @@
       </link>
     </model>
 
-    <!-- Shelving Units - Row 1 (North Side, Left) -->
+    <!-- Shelving Units - Row 1 (North Side, Left) - 垂直排列，大尺寸 -->
     <model name='shelf_1_1'>
       <static>1</static>
-      <pose>-7 7 0.75 0 0 0</pose>
+      <pose>-8 7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -171,19 +171,19 @@
 
     <model name='shelf_1_2'>
       <static>1</static>
-      <pose>-7 5 0.75 0 0 0</pose>
+      <pose>-5 7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -196,19 +196,19 @@
 
     <model name='shelf_1_3'>
       <static>1</static>
-      <pose>-7 3 0.75 0 0 0</pose>
+      <pose>-2 7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -219,22 +219,22 @@
       </link>
     </model>
 
-    <!-- Row 2 (South Side, Left) -->
+    <!-- Row 2 (South Side, Left) - 垂直排列，大尺寸 -->
     <model name='shelf_2_1'>
       <static>1</static>
-      <pose>-7 -3 0.75 0 0 0</pose>
+      <pose>-8 -7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -247,19 +247,19 @@
 
     <model name='shelf_2_2'>
       <static>1</static>
-      <pose>-7 -5 0.75 0 0 0</pose>
+      <pose>-5 -7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -272,19 +272,19 @@
 
     <model name='shelf_2_3'>
       <static>1</static>
-      <pose>-7 -7 0.75 0 0 0</pose>
+      <pose>-2 -7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -295,22 +295,22 @@
       </link>
     </model>
 
-    <!-- Row 3 (East Side) -->
+    <!-- Row 3 (East Side) - 垂直排列，大尺寸 -->
     <model name='shelf_3_1'>
       <static>1</static>
-      <pose>7 7 0.75 0 0 0</pose>
+      <pose>8 7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -323,19 +323,19 @@
 
     <model name='shelf_3_2'>
       <static>1</static>
-      <pose>7 5 0.75 0 0 0</pose>
+      <pose>5 7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -348,19 +348,19 @@
 
     <model name='shelf_3_3'>
       <static>1</static>
-      <pose>7 3 0.75 0 0 0</pose>
+      <pose>2 7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -373,19 +373,19 @@
 
     <model name='shelf_3_4'>
       <static>1</static>
-      <pose>7 -3 0.75 0 0 0</pose>
+      <pose>8 -7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -398,19 +398,19 @@
 
     <model name='shelf_3_5'>
       <static>1</static>
-      <pose>7 -5 0.75 0 0 0</pose>
+      <pose>5 -7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -423,19 +423,19 @@
 
     <model name='shelf_3_6'>
       <static>1</static>
-      <pose>7 -7 0.75 0 0 0</pose>
+      <pose>2 -7 1.0 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name='visual'>
           <geometry>
             <box>
-              <size>3 0.6 1.5</size>
+              <size>0.8 5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -446,9 +446,9 @@
       </link>
     </model>
 
-    <!-- Central Obstacles -->
+    <!-- Central Obstacles - 初始位置，会被random_obstacles脚本移动 -->
     <model name='central_obstacle_1'>
-      <static>1</static>
+      <static>0</static>
       <pose>0 2 0.5 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
@@ -475,7 +475,7 @@
     </model>
 
     <model name='central_obstacle_2'>
-      <static>1</static>
+      <static>0</static>  <!-- 改为可移动模型，支持动态随机分布 -->
       <pose>-2 -2 0.5 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
@@ -500,7 +500,7 @@
     </model>
 
     <model name='central_obstacle_3'>
-      <static>1</static>
+      <static>0</static>  <!-- 改为可移动模型，支持动态随机分布 -->
       <pose>2 -2 0.5 0 0 0</pose>
       <link name='link'>
         <collision name='collision'>
