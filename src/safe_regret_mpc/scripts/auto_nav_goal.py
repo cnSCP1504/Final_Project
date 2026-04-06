@@ -145,10 +145,14 @@ class AutoNavGoal:
         rate = rospy.Rate(10)  # 10Hz
 
         # 获取初始机器人位置（用于计算移动距离）
-        initial_odom = rospy.wait_for_message('/odom', Odometry, timeout=5.0)
-        if initial_odom:
-            initial_x = initial_odom.pose.pose.position.x
-            initial_y = initial_odom.pose.pose.position.y
+        initial_x, initial_y = None, None
+        try:
+            initial_odom = rospy.wait_for_message('/odom', Odometry, timeout=2.0)
+            if initial_odom:
+                initial_x = initial_odom.pose.pose.position.x
+                initial_y = initial_odom.pose.pose.position.y
+        except:
+            rospy.logwarn("⚠️  无法获取odom消息，将仅基于时间等待")
 
         while not self.goal_reached and not rospy.is_shutdown():
             if (rospy.Time.now() - start_time).to_sec() > timeout:
@@ -168,8 +172,11 @@ class AutoNavGoal:
                         dy = self.current_goal['y'] - robot_y
                         distance = math.sqrt(dx*dx + dy*dy)
 
-                        moved = math.sqrt((robot_x - initial_x)**2 + (robot_y - initial_y)**2)
-                        rospy.loginfo(f"🚶 正在导航... 已等待 {elapsed} 秒, 距离{task_name}: {distance:.2f}m, 已移动: {moved:.2f}m")
+                        if initial_x is not None and initial_y is not None:
+                            moved = math.sqrt((robot_x - initial_x)**2 + (robot_y - initial_y)**2)
+                            rospy.loginfo(f"🚶 正在导航... 已等待 {elapsed} 秒, 距离{task_name}: {distance:.2f}m, 已移动: {moved:.2f}m")
+                        else:
+                            rospy.loginfo(f"🚶 正在导航... 已等待 {elapsed} 秒, 距离{task_name}: {distance:.2f}m")
                 except:
                     rospy.loginfo(f"🚶 正在导航... 已等待 {elapsed} 秒")
 

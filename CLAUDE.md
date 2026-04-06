@@ -1457,141 +1457,134 @@ rm -rf build/safe_regret_mpc devel/lib/safe_regret_mpc
 catkin_make --only-pkg-with-deps safe_regret_mpc
 source devel/setup.bash
 ```
-不是在180度摆头！是明明都已经转了小半圈了却还是转回反方向                     
-                                                                                
-● 明白了！不是边界跳变问题，而是方向没有锁定的问题。                            
-                                                                                
-  让我先确认一下具体症状：                                                      
-                                                                  
-  场景1：从100°开始旋转                                                         
-  - 100° → 80° → 60° → 突然反向 → 70° → 90° → 100°...             
-
-  场景2：从-100°开始旋转
-  - -100° → -80° → -60° → 突然反向 → -70° → -90° → -100°...
-
-  是这种情况吗？机器人会往一个方向转一会儿，然后突然反向转回去？
-
-  如果是这样，问题就是：每次调用applyRotationSpeedLimit()时都重新计算方向，而不
-  是在进入旋转模式时锁定方向。
-
-  正确的逻辑应该是：
-  进入旋转时(etheta=100°): 锁定方向 = -1.0 (逆时针)
-  旋转到50°: 使用锁定方向 = -1.0 ✅ 继续逆时针
-  旋转到10°: 使用锁定方向 = -1.0 ✅ 继续逆时针
-  退出旋转: 解锁
-
-  现在的错误逻辑：
-  进入旋转时(etheta=100°): 计算方向 = -1.0 (逆时针)
-  旋转到50°: 重新计算方向 = -1.0 (逆时针)
-  如果etheta跳变: 计算方向 = +1.0 ❌ 突然反向！
-
-  是这个意思吗？如果是的话，我需要实现方向锁定机制。
-
-❯ 是的
-好的，明白了！现在完成方向锁定机制的实现。                                    
+测试时无法看到gazebo和rviz，显示ros启动失败                                   
+                                                                               
+● 让我帮你诊断和修复这个问题。首先检查一下当前的ROS状态和脚本配置：             
                                                
-  继续修改updateInPlaceRotation()，在进入旋转时锁定方向：                       
+● Bash(ps aux | grep -E "roslaunch|rosmaster|roscore|gazebo|rviz" | grep -v     
+      grep)                                                       
+  ⎿  No matches found                                                           
+                                                                  
+● Bash(cd /home/dixon/Final_Project/catkin && source devel/setup.bash && rospack
+       find safe_regret_mpc)                                      
+  ⎿  /home/dixon/Final_Project/catkin/src/safe_regret_mpc                       
    
-● Update(src/safe_regret_mpc/src/SafeRegretMPC.cpp)                             
-  ⎿  Added 12 lines                                               
-      395      if (std::abs(etheta) > HEADING_ERROR_CRITICAL &&          
-           !in_place_rotation_) {                                        
-      396          // Entry condition: angle > 90° AND not currently in         
-           rotation mode                                                 
-      397          in_place_rotation_ = true;                                   
-      398 +                                                              
-      399 +        // ✅ LOCK rotation direction when entering rotation  
-          +mode                                                          
-      400 +        rotation_direction_locked_ = true;                    
-      401 +        locked_rotation_direction_ = (etheta >= 0) ? -1.0 :   
-          +1.0;                                                          
-      402 +                                                              
-      403          std::cout << "\n╔════════════════════════════════════
-           ════════════════════╗\n"
-      404                    << "║  🔄 ENTERING PURE ROTATION MODE
-                             ║\n"
-      405                    << "╠══════════════════════════════════════
-           ══════════════════╣\n"
-      406                    << "║  Current heading error: " <<
-           (std::abs(etheta) * 180.0 / M_PI) << "° (>90°)
-              ║\n"
-      407                    << "║  Exit condition: < 10°
-                              ║\n"
-      408 +                  << "║  Direction LOCKED: " <<               
-          +(locked_rotation_direction_ > 0 ? "Clockwise" :               
-          +"Counter-Clockwise") << "           ║\n"                      
-      409                    << "║  Action: Speed FORCED to 0.0 m/s
-                             ║\n"
-      410                    << "║         Only in-place rotation
-           ALLOWED                 ║\n"
-      411                    << "╚══════════════════════════════════════
-           ══════════════════╝\n" << std::endl;
-     ...
-      407          // Exit condition: in rotation mode AND angle < 10°
-      408          // Note: Both conditions must be met to exit
-      409          in_place_rotation_ = false;
-      410 +                                                              
-      411 +        // ✅ UNLOCK rotation direction when exiting          
-      412 +        rotation_direction_locked_ = false;                   
-      413 +        locked_rotation_direction_ = 0.0;                     
-      414 +                                                              
-      415          std::cout << "\n╔════════════════════════════════════
-           ════════════════════╗\n"
-      416                    << "║  ✅ EXITING PURE ROTATION MODE
-                             ║\n"
-      417                    << "╠══════════════════════════════════════
-           ══════════════════╣\n"
-      418                    << "║  Current heading error: " <<
-           (std::abs(etheta) * 180.0 / M_PI) << "° (<10°)
-               ║\n"
-      419 +                  << "║  Direction UNLOCKED                   
-          +                 ║\n"                                         
-      420                    << "║  Action: Normal motion RESUMED
-                             ║\n"
-      421                    << "╚══════════════════════════════════════
-           ══════════════════╝\n" << std::endl;
-      422      }
+● Read 1 file (ctrl+o to expand)                                                
+                                                                  
+● 我发现问题了！脚本启动ROS时没有正确设置环境变量。让我修复这个问题：           
+                                 
+● Read 1 file (ctrl+o to expand)                                                
+                                                                                
+● Update(test/scripts/run_automated_test.py)                                    
+  ⎿  Added 38 lines, removed 17 lines                                           
+      387          TestLogger.info(f"  货架ID: {shelf['id']}")           
+      388          TestLogger.info(f"  模型: {self.args.model}")                
+      389                                                                       
+      390 -        # 构建launch命令                                             
+      391 -        launch_cmd = [                                               
+      392 -            'roslaunch',                                             
+      393 -            'safe_regret_mpc/safe_regret_mpc_test.launch',           
+      394 -            f'pickup_x:={shelf["x"]}',                        
+      395 -            f'pickup_y:={shelf["y"]}',                        
+      396 -            f'pickup_yaw:={shelf["yaw"]}',                    
+      397 -                                                              
+          -f'use_gazebo:={str(self.args.use_gazebo).lower()}',           
+      398 -            f'enable_visualization:={str(self.args.visualizat 
+          -ion).lower()}',                                               
+      399 -            f'debug_mode:=true'                               
+      400 -        ]                                                     
+      390 +        # 设置ROS环境变量                                     
+      391 +        env = os.environ.copy()                               
+      392   
+      393 -        # 添加模型参数                                        
+      394 -        model_params = self.model_config['params'].split()    
+      395 -        launch_cmd.extend(model_params)                       
+      393 +        # Source catkin workspace setup                       
+      394 +        setup_bash = self.workspace_dir / "devel" /           
+          +"setup.bash"                                                  
+      395 +        if setup_bash.exists():                               
+      396 +            TestLogger.info(f"Sourcing workspace setup:       
+          +{setup_bash}")                                                
+      397 +            # 读取setup.bash并设置环境变量                    
+      398 +            try:                                              
+      399 +                result = subprocess.run(                      
+      400 +                    ['bash', '-c', f'source {setup_bash} &&   
+          +env'],                                                        
+      401 +                    capture_output=True,                      
+      402 +                    text=True,                                
+      403 +                    cwd=self.workspace_dir                    
+      404 +                )                                             
+      405 +                # 解析环境变量                                
+      406 +                for line in result.stdout.split('\n'):        
+      407 +                    if '=' in line and not                    
+          +line.startswith('_'):                                         
+      408 +                        key, value = line.split('=', 1)       
+      409 +                        env[key] = value                      
+      410 +            except Exception as e:                            
+      411 +                TestLogger.warning(f"无法source workspace     
+          +setup: {e}")                                                  
+      412   
+      413 -        TestLogger.info(f"Launch命令: {'                      
+          -'.join(launch_cmd)}")                                         
+      413 +        # 构建launch命令 - 使用bash -c来确保环境变量正确      
+      414 +        launch_cmd_str = f"""                                 
+      415 +        source {self.workspace_dir}/devel/setup.bash &&       
+      416 +        roslaunch safe_regret_mpc/safe_regret_mpc_test.launch 
+          + \\                                                           
+      417 +            pickup_x:={shelf['x']} \\                         
+      418 +            pickup_y:={shelf['y']} \\                         
+      419 +            pickup_yaw:={shelf['yaw']} \\                     
+      420 +            use_gazebo:={str(self.args.use_gazebo).lower()}   
+          +\\                                                            
+      421 +                                                              
+          +enable_visualization:={str(self.args.visualization).lower()}  
+          +\\                                                            
+      422 +            debug_mode:=true \\                               
+      423 +            {self.model_config['params']}                     
+      424 +        """.replace('\n', ' ').strip()                        
+      425   
+      426 +        TestLogger.info(f"Launch命令: {launch_cmd_str}")      
+      427 +                                                              
+      428          # 启动launch文件
+      429          log_file = test_dir / "logs" / "launch.log"
+      430          with open(log_file, 'w') as f:
+      431              self.launch_process = subprocess.Popen(
+      432 -                launch_cmd,                                   
+      432 +                ['bash', '-c', launch_cmd_str],               
+      433                  stdout=f,
+      434                  stderr=subprocess.STDOUT,
+      435 -                cwd=self.workspace_dir                        
+      435 +                env=env,                                      
+      436 +                cwd=str(self.workspace_dir)                   
+      437              )
+      438   
+      439          TestLogger.info(f"ROS系统启动中 (PID:
+           {self.launch_process.pid})...")
 
-● 现在修改applyRotationSpeedLimit()使用锁定的方向：
+● 现在让我也修复清理函数，并添加一个选项让Gazebo和RViz可见：
 
-● Update(src/safe_regret_mpc/src/SafeRegretMPC.cpp)                             
-  ⎿  Added 13 lines, removed 2 lines
-      446          // ✅ FIX: Also override angular velocity to prevent         
-           MPC from "pulling back"                                       
-      447          // MPC tries to compensate for zero linear speed by          
-           oscillating angular velocity                                  
-      448          const double fixed_angular_vel = 0.5;  // rad/s              
-           (~29°/s)                                                      
-      449 -        double rotation_direction = (etheta >= 0) ? -1.0 :    
-          -1.0;                                                          
-      449 +                                                              
-      450 +        // ✅ Use LOCKED rotation direction to prevent        
-          +oscillation                                                   
-      451 +        double rotation_direction;                            
-      452 +        if (rotation_direction_locked_) {                     
-      453 +            rotation_direction = locked_rotation_direction_;  
-          + // ✅ Use locked direction                                   
-      454 +        } else {                                              
-      455 +            // Fallback: determine direction from etheta sign 
-      456 +            rotation_direction = (etheta >= 0) ? -1.0 : 1.0;  
-      457 +        }                                                     
-      458 +                                                              
-      459          angular_vel = rotation_direction * fixed_angular_vel;
-      460   
-      461          std::cout << "🔄 [PURE ROTATION] Speed LOCKED at 0.0
-           m/s | "
-      462                    << "Angular vel OVERRIDDEN to " <<
-           angular_vel << " rad/s ("
-      463 -                  << (angular_vel * 180.0 / M_PI) << "°/s)" <<
-          - std::endl;                                                   
-      463 +                  << (angular_vel * 180.0 / M_PI) << "°/s) | "
-      464 +                  << "Direction " <<                          
-          +(rotation_direction_locked_ ? "LOCKED" : "computed")          
-      465 +                  << std::endl;                               
-      466      }
-      467  }
-      468   
+● Read 1 file (ctrl+o to expand)                                                
+                                       
+● Update(test/scripts/run_automated_test.py)                                    
+  ⎿  Added 5 lines, removed 1 line                                
+      667                                                                       
+      668      parser.add_argument('--viz',                                     
+      669                         action='store_true',                          
+      670 -                       help='启用RViz可视化')                        
+      670 +                       help='启用RViz和Gazebo可视化')                
+      671                                                                       
+      672 +    parser.add_argument('--foreground',                              
+      673 +                       action='store_true',                   
+      674 +                                                              
+          +help='前台运行模式（显示Gazebo和RViz窗口）')                  
+      675 +                                                              
+      676      parser.add_argument('--interval',
+      677                         type=int, default=5,
+      678                         help='测试间隔时间，秒 (默认: 5)')
+
+● Read 1 file (ctrl+o to expand)    
   ⎿  API Error: 429 {"error":{"code":"1308","message":"已达到 5 
-     小时的使用上限。您的限额将在 2026-04-05 19:19:17 
-     重置。"},"request_id":"20260405153132f73906afeca64108"}
+     小时的使用上限。您的限额将在 2026-04-06 16:56:31                           
+     重置。"},"request_id":"20260406154231cb4b6113a5c34b65"}
+
 上次的进度如上

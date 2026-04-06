@@ -1,0 +1,90 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║           自动化Baseline测试系统 - 快速使用指南                        ║
+║        Automated Baseline Testing System - Quick Start                ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+【最简单的方式 - 交互式菜单】
+========================================
+cd /home/dixon/Final_Project/catkin
+./test/scripts/quick_test.sh
+
+然后选择你想要的测试场景（1-9）
+
+
+【快速命令示例】
+========================================
+
+# 1. 基线测试（Tube MPC，所有货架）
+./test/scripts/run_automated_test.py --model tube_mpc
+
+# 2. 快速测试（3个货架，无Gazebo）
+./test/scripts/run_automated_test.py --model tube_mpc --shelves 3 --no-gazebo
+
+# 3. STL增强测试
+./test/scripts/run_automated_test.py --model stl --shelves 3
+
+# 4. 完整系统测试（Safe-Regret MPC）
+./test/scripts/run_automated_test.py --model safe_regret
+
+# 5. 使用Bash脚本
+./test/scripts/automated_baseline_test.sh --model tube_mpc --shelves 3
+
+
+【支持的模型】
+========================================
+tube_mpc      - Tube MPC（基线）
+stl           - Tube MPC + STL监控
+dr            - Tube MPC + DR约束收紧
+safe_regret   - 完整Safe-Regret MPC（STL+DR）
+
+
+【货架位置】
+========================================
+货架01: (-6.0, -7.0) - 左上区域
+货架02: (-3.0, -7.0) - 左中区域
+货架03: (0.0, -7.0)  - 左下区域（默认）
+货架04: (3.0, -7.0)  - 中上区域
+货架05: (6.0, -7.0)  - 中下区域
+
+
+【查看测试结果】
+========================================
+cd /home/dixon/Final_Project/catkin/test_results
+ls -t | head -1                    # 查看最新测试目录
+cd MODEL_YYYYMMDD_HHMMSS
+cat final_report.txt                # 查看最终报告
+
+
+【清理ROS进程（如果需要）】
+========================================
+killall -9 roslaunch rosmaster roscore gzserver gzclient python
+pkill -9 -f ros
+
+
+【常见问题】
+========================================
+Q: 测试卡住了怎么办？
+A: 运行清理命令，然后增加超时时间: --timeout 300
+
+Q: 如何加速测试？
+A: 使用 --no-gazebo 选项，可减少50-70%时间
+
+Q: 测试结果保存在哪里？
+A: test_results/MODEL_YYYYMMDD_HHMMSS/
+
+
+【详细文档】
+========================================
+完整使用指南: test/scripts/AUTOMATED_TESTING_README.md
+文件清单和API: test/TESTING_SYSTEM_SUMMARY.md
+
+
+【技术支持】
+========================================
+查看日志: test_results/MODEL_*/test_*/logs/launch.log
+查看摘要: test_results/MODEL_*/test_*/test_summary.txt
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  提示: 首次使用建议运行 --no-gazebo 模式，以快速验证系统功能         ║
+╚══════════════════════════════════════════════════════════════════════╝
