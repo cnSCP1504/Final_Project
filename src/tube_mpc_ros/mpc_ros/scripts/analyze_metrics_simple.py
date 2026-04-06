@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
-Tube MPC Metrics Analysis Script
+Tube MPC Metrics Analysis Script (Simple version - no plots)
 
-Analyzes metrics CSV files and generates visualization reports.
-Usage: ./analyze_metrics.py [csv_file]
+Analyzes metrics CSV files and generates text reports.
+Usage: ./analyze_metrics_simple.py [csv_file]
 """
 
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import sys
-from pathlib import Path
 
 def analyze_metrics(csv_file='/tmp/tube_mpc_metrics.csv'):
     """Analyze metrics and generate report"""
@@ -40,11 +38,6 @@ def analyze_metrics(csv_file='/tmp/tube_mpc_metrics.csv'):
     print(f"  Mean:   {df['etheta'].mean():.6f} rad ({np.degrees(df['etheta'].mean()):.2f}°)")
     print(f"  Std:    {df['etheta'].std():.6f} rad ({np.degrees(df['etheta'].std()):.2f}°)")
     print(f"  Max:    {df['etheta'].abs().max():.6f} rad ({np.degrees(df['etheta'].abs().max()):.2f}°)")
-
-    print(f"\nTracking Error Norm:")
-    print(f"  Mean:   {df['tracking_error_norm'].mean():.6f} m")
-    print(f"  Std:    {df['tracking_error_norm'].std():.6f} m")
-    print(f"  Max:    {df['tracking_error_norm'].max():.6f} m")
 
     # MPC Performance
     print(f"\n{'='*60}")
@@ -115,73 +108,6 @@ def analyze_metrics(csv_file='/tmp/tube_mpc_metrics.csv'):
     print(f"  Min:    {df['cost'].min():.3f}")
     print(f"  Max:    {df['cost'].max():.3f}")
 
-    # Generate plots
-    print(f"\n{'='*60}")
-    print("Generating plots...")
-    print(f"{'='*60}")
-
-    fig, axes = plt.subplots(3, 2, figsize=(15, 12))
-    fig.suptitle('Tube MPC Performance Analysis', fontsize=16, fontweight='bold')
-
-    # Plot 1: Tracking errors
-    axes[0, 0].plot(df['timestamp'], df['cte'], label='CTE', alpha=0.7)
-    axes[0, 0].set_xlabel('Time (s)')
-    axes[0, 0].set_ylabel('Cross-Track Error (m)')
-    axes[0, 0].set_title('Cross-Track Error')
-    axes[0, 0].grid(True, alpha=0.3)
-    axes[0, 0].axhline(0, color='r', linestyle='--', alpha=0.5)
-
-    # Plot 2: Heading error
-    axes[0, 1].plot(df['timestamp'], np.degrees(df['etheta']), label='Heading Error', alpha=0.7, color='orange')
-    axes[0, 1].set_xlabel('Time (s)')
-    axes[0, 1].set_ylabel('Heading Error (deg)')
-    axes[0, 1].set_title('Heading Error')
-    axes[0, 1].grid(True, alpha=0.3)
-    axes[0, 1].axhline(0, color='r', linestyle='--', alpha=0.5)
-
-    # Plot 3: MPC solve time
-    axes[1, 0].plot(df['timestamp'], df['mpc_solve_time'], label='Solve Time', alpha=0.7, color='green')
-    axes[1, 0].set_xlabel('Time (s)')
-    axes[1, 0].set_ylabel('Solve Time (ms)')
-    axes[1, 0].set_title('MPC Solve Time')
-    axes[1, 0].grid(True, alpha=0.3)
-
-    # Plot 4: Tube radius and safety margin
-    axes[1, 1].plot(df['timestamp'], df['tube_radius'], label='Tube Radius', alpha=0.7)
-    axes[1, 1].plot(df['timestamp'], df['safety_margin'], label='Safety Margin', alpha=0.7)
-    axes[1, 1].set_xlabel('Time (s)')
-    axes[1, 1].set_ylabel('Distance (m)')
-    axes[1, 1].set_title('Tube Radius and Safety Margin')
-    axes[1, 1].legend()
-    axes[1, 1].grid(True, alpha=0.3)
-
-    # Plot 5: Control inputs
-    ax5_vel = axes[2, 0]
-    ax5_ang = axes[2, 0].twinx()
-    ax5_vel.plot(df['timestamp'], df['vel'], label='Linear Vel', alpha=0.7, color='blue')
-    ax5_ang.plot(df['timestamp'], np.degrees(df['angvel']), label='Angular Vel', alpha=0.7, color='red', linestyle='--')
-    ax5_vel.set_xlabel('Time (s)')
-    ax5_vel.set_ylabel('Linear Velocity (m/s)', color='blue')
-    ax5_ang.set_ylabel('Angular Velocity (deg/s)', color='red')
-    ax5_vel.set_title('Control Inputs')
-    ax5_vel.grid(True, alpha=0.3)
-
-    # Plot 6: Regret
-    axes[2, 1].plot(df['timestamp'], df['regret_dynamic'].cumsum(), label='Dynamic Regret', alpha=0.7)
-    axes[2, 1].plot(df['timestamp'], df['regret_safe'].cumsum(), label='Safe Regret', alpha=0.7)
-    axes[2, 1].set_xlabel('Time (s)')
-    axes[2, 1].set_ylabel('Cumulative Regret')
-    axes[2, 1].set_title('Cumulative Regret')
-    axes[2, 1].legend()
-    axes[2, 1].grid(True, alpha=0.3)
-
-    plt.tight_layout()
-
-    # Save plot
-    output_file = csv_file.replace('.csv', '_analysis.png')
-    plt.savefig(output_file, dpi=150, bbox_inches='tight')
-    print(f"Plot saved to: {output_file}")
-
     # Save text report
     report_file = csv_file.replace('.csv', '_report.txt')
     with open(report_file, 'w') as f:
@@ -219,22 +145,53 @@ def analyze_metrics(csv_file='/tmp/tube_mpc_metrics.csv'):
         f.write(f"  Feasible solves:  {feasible_count}/{len(df)} ({100*feasible_count/len(df):.1f}%)\n")
         f.write(f"  Failed solves:    {len(df) - feasible_count}/{len(df)} ({100*(1-feasible_count/len(df)):.1f}%)\n\n")
 
+        f.write(f"\nControl Performance\n")
+        f.write(f"{'-'*60}\n")
+        f.write(f"Linear Velocity:\n")
+        f.write(f"  Mean:   {df['vel'].mean():.3f} m/s\n")
+        f.write(f"  Std:    {df['vel'].std():.3f} m/s\n")
+        f.write(f"  Max:    {df['vel'].max():.3f} m/s\n\n")
+
+        f.write(f"Angular Velocity:\n")
+        f.write(f"  Mean:   {df['angvel'].mean():.3f} rad/s ({np.degrees(df['angvel'].mean()):.2f}°/s)\n")
+        f.write(f"  Std:    {df['angvel'].std():.3f} rad/s ({np.degrees(df['angvel'].std()):.2f}°/s)\n")
+        f.write(f"  Max:    {df['angvel'].abs().max():.3f} rad/s ({np.degrees(df['angvel'].abs().max()):.2f}°/s)\n\n")
+
         f.write(f"\nSafety Analysis\n")
         f.write(f"{'-'*60}\n")
         f.write(f"Tube Violations:\n")
         f.write(f"  Total violations:  {violations}/{len(df)} ({100*violations/len(df):.1f}%)\n\n")
 
-        f.write(f"Regret Analysis\n")
+        f.write(f"Safety Margin:\n")
+        f.write(f"  Mean:   {df['safety_margin'].mean():.3f} m\n")
+        f.write(f"  Min:    {df['safety_margin'].min():.3f} m\n")
+        f.write(f"  Std:    {df['safety_margin'].std():.3f} m\n\n")
+
+        f.write(f"Safety Violations:\n")
+        f.write(f"  Total violations:  {safety_violations}/{len(df)} ({100*safety_violations/len(df):.1f}%)\n\n")
+
+        f.write(f"\nRegret Analysis\n")
         f.write(f"{'-'*60}\n")
         f.write(f"Dynamic Regret:\n")
         f.write(f"  Cumulative: {df['regret_dynamic'].iloc[-1]:.2f}\n")
         f.write(f"  Average:    {df['regret_dynamic'].mean():.4f} per step\n\n")
 
-    print(f"Report saved to: {report_file}")
+        f.write(f"Safe Regret:\n")
+        f.write(f"  Cumulative: {df['regret_safe'].iloc[-1]:.2f}\n")
+        f.write(f"  Average:    {df['regret_safe'].mean():.4f} per step\n\n")
+
+        f.write(f"\nCost Analysis\n")
+        f.write(f"{'-'*60}\n")
+        f.write(f"Stage Cost:\n")
+        f.write(f"  Mean:   {df['cost'].mean():.3f}\n")
+        f.write(f"  Std:    {df['cost'].std():.3f}\n")
+        f.write(f"  Min:    {df['cost'].min():.3f}\n")
+        f.write(f"  Max:    {df['cost'].max():.3f}\n\n")
 
     print(f"\n{'='*60}")
-    print("Analysis complete!")
+    print(f"Report saved to: {report_file}")
     print(f"{'='*60}")
+    print("Analysis complete!")
 
 if __name__ == '__main__':
     csv_file = sys.argv[1] if len(sys.argv) > 1 else '/tmp/tube_mpc_metrics.csv'

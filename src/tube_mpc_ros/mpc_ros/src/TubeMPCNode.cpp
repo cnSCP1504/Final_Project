@@ -646,9 +646,11 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         if(_in_place_rotation) {
             if(!_rotation_direction_locked) {
                 // 第一次进入旋转模式，确定并锁定旋转方向
-                _rotation_direction = (etheta > 0) ? 1.0 : -1.0;
+                // ✅ FIX: 修正方向计算，与SafeRegretMPC保持一致
+                // etheta > 0 表示需要逆时针旋转（负方向），etheta < 0 表示需要顺时针旋转（正方向）
+                _rotation_direction = (etheta > 0) ? -1.0 : 1.0;
                 _rotation_direction_locked = true;
-                cout << "[ROTATION] Direction LOCKED: " << (_rotation_direction > 0 ? "CCW (+)" : "CW (-)") << endl;
+                cout << "[ROTATION] Direction LOCKED: " << (_rotation_direction > 0 ? "CW (+)" : "CCW (-)") << endl;
             }
 
             // 强制角速度方向与锁定方向一致
@@ -711,9 +713,24 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
             // 不管当前角度是多少，只要在旋转模式，速度必须为0
             _speed = 0.0;
 
+            // ✅ CRITICAL FIX: 强制使用固定角速度，防止MPC导致左右摆头
+            // MPC计算的角速度会根据角度变化而波动，导致旋转不稳定
+            // 解决方案：使用锁定的方向和固定的角速度大小
+            const double FIXED_ANGULAR_VEL = 0.5;  // 固定角速度 0.5 rad/s (~29°/s)
+
+            if(_rotation_direction_locked) {
+                // 使用锁定的方向
+                _w_filtered = _rotation_direction * FIXED_ANGULAR_VEL;
+            } else {
+                // 备用方案：根据etheta符号确定方向（与主逻辑保持一致）
+                // etheta > 0 表示需要逆时针旋转（负方向），etheta < 0 表示需要顺时针旋转（正方向）
+                double rotation_direction = (etheta > 0) ? -1.0 : 1.0;
+                _w_filtered = rotation_direction * FIXED_ANGULAR_VEL;
+            }
+
             // 每10次控制循环输出一次状态
             if(debug_counter % 10 == 0) {
-                cout << "[ROTATION] Speed=0.0 | Angle=" << (etheta * 180.0 / M_PI) << "° | Exit<10° | w=" << _w_filtered << endl;
+                cout << "[ROTATION] Speed=0.0 | Angle=" << (etheta * 180.0 / M_PI) << "° | Exit<10° | w=" << _w_filtered << " (FIXED)" << endl;
             }
         } else if(std::abs(etheta) > HEADING_ERROR_THRESHOLD) {
             // ⚠️ 非旋转模式下的大角度偏差（60-90度）：减速但不停止

@@ -223,6 +223,11 @@ private:
      */
     std::string getSystemMode() const;
 
+    /**
+     * @brief Normalize angle to [-π, π]
+     */
+    double normalizeAngle(double angle) const;
+
     // ========== Member Variables ==========
 
     // ROS handles
@@ -279,6 +284,9 @@ private:
     nav_msgs::Path global_plan_;
     geometry_msgs::PoseStamped current_goal_;
     std::vector<Eigen::VectorXd> reference_trajectory_;
+    bool goal_received_;
+    bool goal_reached_;
+    double goal_radius_;  // Distance threshold for goal arrival (meters)
 
     // STL state
     safe_regret_mpc::STLRobustness stl_info_;

@@ -98,6 +98,7 @@ add_library(${PROJECT_NAME}_lib
   src/TerminalSetIntegrator.cpp
   src/RegretTracker.cpp
   src/PerformanceMonitor.cpp
+  src/MetricsCollector.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}_lib

@@ -429,15 +429,21 @@ void SafeRegretMPCNode::tubeMPCErrorCallback(const std_msgs::Float64MultiArray::
     tube_mpc_error_ = *msg;
     tube_mpc_error_received_ = true;
 
+    // ✅ Log reception
+    if (msg->data.size() >= 2) {
+        double cte = msg->data[0];
+        double etheta = msg->data[1];
+        ROS_INFO_THROTTLE(2.0, "📥 Received tube_mpc tracking error: cte=%.3f, etheta=%.3f (%.1f°), size=%zu",
+                          cte, etheta, etheta * 180.0 / M_PI, msg->data.size());
+    } else {
+        ROS_WARN("📥 Received tube_mpc tracking error with insufficient data: %zu values",
+                 msg->data.size());
+    }
+
     // Forward error to DR module if enabled
     if (dr_enabled_ && dr_received_) {
         // DR module will use this for constraint tightening
         // TODO: Implement DR module forwarding
-    }
-
-    if (debug_mode_) {
-        ROS_DEBUG("Tube MPC tracking error received: %zu values",
-                  msg->data.size());
     }
 }
 
@@ -526,7 +532,68 @@ void SafeRegretMPCNode::controlTimerCallback(const ros::TimerEvent& event) {
             // Solve Safe-Regret MPC (includes DR constraints and STL robustness in optimization)
             solveMPC();
 
-            // Publish the command computed by Safe-Regret MPC
+            // ✅✅✅ CRITICAL: Check in-place rotation AFTER MPC solve, BEFORE publish
+            // This ensures MPC's angular velocity is overridden when rotation is needed
+            {
+                // Get etheta for rotation decision
+                double etheta = 0.0;
+                if (tube_mpc_error_received_ && tube_mpc_error_.data.size() >= 2) {
+                    etheta = tube_mpc_error_.data[1];  // Heading error in radians
+                } else if (!reference_trajectory_.empty()) {
+                    Eigen::VectorXd ref_state = reference_trajectory_[0];
+                    double ref_theta = ref_state(2);
+                    double current_theta = tf::getYaw(current_odom_.pose.pose.orientation);
+                    etheta = normalizeAngle(current_theta - ref_theta);
+                }
+
+                // In-place rotation state machine
+                const double HEADING_ERROR_CRITICAL = 1.57;  // 90 degrees
+                const double HEADING_ERROR_EXIT = 0.175;     // 10 degrees
+                static bool in_place_rotation_active = false;
+                static double locked_rotation_direction = 0.0;
+
+                // Entry condition
+                if (std::abs(etheta) > HEADING_ERROR_CRITICAL && !in_place_rotation_active) {
+                    in_place_rotation_active = true;
+                    locked_rotation_direction = (etheta >= 0) ? -1.0 : 1.0;
+
+                    std::cout << "\n╔════════════════════════════════════════════════════════╗\n"
+                              << "║  🔄 ENTERING PURE ROTATION MODE                        ║\n"
+                              << "╠════════════════════════════════════════════════════════╣\n"
+                              << "║  Current heading error: " << (std::abs(etheta) * 180.0 / M_PI) << "° (>90°)                  ║\n"
+                              << "║  Exit condition: < 10°                                  ║\n"
+                              << "║  Direction LOCKED: " << (locked_rotation_direction > 0 ? "Clockwise" : "Counter-Clockwise") << "           ║\n"
+                              << "║  Action: OVERRIDING MPC angular velocity                ║\n"
+                              << "╚════════════════════════════════════════════════════════╝\n" << std::endl;
+                }
+                // Exit condition
+                else if (in_place_rotation_active && std::abs(etheta) < HEADING_ERROR_EXIT) {
+                    in_place_rotation_active = false;
+                    locked_rotation_direction = 0.0;
+
+                    std::cout << "\n╔════════════════════════════════════════════════════════╗\n"
+                              << "║  ✅ EXITING PURE ROTATION MODE                         ║\n"
+                              << "╠════════════════════════════════════════════════════════╣\n"
+                              << "║  Current heading error: " << (std::abs(etheta) * 180.0 / M_PI) << "° (<10°)                   ║\n"
+                              << "║  Direction UNLOCKED                                     ║\n"
+                              << "║  Action: Resuming MPC control                           ║\n"
+                              << "╚════════════════════════════════════════════════════════╝\n" << std::endl;
+                }
+
+                // Override angular velocity if in-place rotation is active
+                if (in_place_rotation_active) {
+                    const double fixed_angular_vel = 0.5;  // rad/s
+                    cmd_vel_.linear.x = 0.0;
+                    cmd_vel_.angular.z = locked_rotation_direction * fixed_angular_vel;
+
+                    std::cout << "🔄 [PURE ROTATION] Speed LOCKED at 0.0 m/s | "
+                              << "Angular vel OVERRIDDEN to " << cmd_vel_.angular.z << " rad/s ("
+                              << (cmd_vel_.angular.z * 180.0 / M_PI) << "°/s) | "
+                              << "Direction LOCKED" << std::endl;
+                }
+            }
+
+            // Publish the command computed by Safe-Regret MPC (or overridden by rotation logic)
             publishFinalCommand(cmd_vel_);
         } else {
             // Without DR/STL, just forward tube_mpc command
@@ -537,6 +604,68 @@ void SafeRegretMPCNode::controlTimerCallback(const ros::TimerEvent& event) {
     } else {
         // Standalone mode: solve MPC independently
         solveMPC();
+
+        // ✅✅✅ CRITICAL: Check in-place rotation AFTER MPC solve, BEFORE publish
+        // This ensures MPC's angular velocity is overridden when rotation is needed
+        {
+            // Get etheta for rotation decision
+            double etheta = 0.0;
+            if (tube_mpc_error_received_ && tube_mpc_error_.data.size() >= 2) {
+                etheta = tube_mpc_error_.data[1];  // Heading error in radians
+            } else if (!reference_trajectory_.empty()) {
+                Eigen::VectorXd ref_state = reference_trajectory_[0];
+                double ref_theta = ref_state(2);
+                double current_theta = tf::getYaw(current_odom_.pose.pose.orientation);
+                etheta = normalizeAngle(current_theta - ref_theta);
+            }
+
+            // In-place rotation state machine
+            const double HEADING_ERROR_CRITICAL = 1.57;  // 90 degrees
+            const double HEADING_ERROR_EXIT = 0.175;     // 10 degrees
+            static bool in_place_rotation_active = false;
+            static double locked_rotation_direction = 0.0;
+
+            // Entry condition
+            if (std::abs(etheta) > HEADING_ERROR_CRITICAL && !in_place_rotation_active) {
+                in_place_rotation_active = true;
+                locked_rotation_direction = (etheta >= 0) ? -1.0 : 1.0;
+
+                std::cout << "\n╔════════════════════════════════════════════════════════╗\n"
+                          << "║  🔄 ENTERING PURE ROTATION MODE                        ║\n"
+                          << "╠════════════════════════════════════════════════════════╣\n"
+                          << "║  Current heading error: " << (std::abs(etheta) * 180.0 / M_PI) << "° (>90°)                  ║\n"
+                          << "║  Exit condition: < 10°                                  ║\n"
+                          << "║  Direction LOCKED: " << (locked_rotation_direction > 0 ? "Clockwise" : "Counter-Clockwise") << "           ║\n"
+                          << "║  Action: OVERRIDING MPC angular velocity                ║\n"
+                          << "╚════════════════════════════════════════════════════════╝\n" << std::endl;
+            }
+            // Exit condition
+            else if (in_place_rotation_active && std::abs(etheta) < HEADING_ERROR_EXIT) {
+                in_place_rotation_active = false;
+                locked_rotation_direction = 0.0;
+
+                std::cout << "\n╔════════════════════════════════════════════════════════╗\n"
+                          << "║  ✅ EXITING PURE ROTATION MODE                         ║\n"
+                          << "╠════════════════════════════════════════════════════════╣\n"
+                          << "║  Current heading error: " << (std::abs(etheta) * 180.0 / M_PI) << "° (<10°)                   ║\n"
+                          << "║  Direction UNLOCKED                                     ║\n"
+                          << "║  Action: Resuming MPC control                           ║\n"
+                          << "╚════════════════════════════════════════════════════════╝\n" << std::endl;
+            }
+
+            // Override angular velocity if in-place rotation is active
+            if (in_place_rotation_active) {
+                const double fixed_angular_vel = 0.5;  // rad/s
+                cmd_vel_.linear.x = 0.0;
+                cmd_vel_.angular.z = locked_rotation_direction * fixed_angular_vel;
+
+                std::cout << "🔄 [PURE ROTATION] Speed LOCKED at 0.0 m/s | "
+                          << "Angular vel OVERRIDDEN to " << cmd_vel_.angular.z << " rad/s ("
+                          << (cmd_vel_.angular.z * 180.0 / M_PI) << "°/s) | "
+                          << "Direction LOCKED" << std::endl;
+            }
+        }
+
         publishFinalCommand(cmd_vel_);
     }
 }
@@ -551,12 +680,38 @@ void SafeRegretMPCNode::publishTimerCallback(const ros::TimerEvent& event) {
 void SafeRegretMPCNode::solveMPC() {
     // Get current state from odometry
     Eigen::VectorXd current_state(6);
+
+    // ✅ FIX: Extract cte and etheta from tube_mpc tracking error if available
+    double cte = 0.0;
+    double etheta = 0.0;
+
+    if (tube_mpc_error_received_ && tube_mpc_error_.data.size() >= 2) {
+        cte = tube_mpc_error_.data[0];      // Cross-track error
+        etheta = tube_mpc_error_.data[1];    // Heading error (radians)
+
+        ROS_INFO_THROTTLE(2.0, "✅ Using tube_mpc tracking error: cte=%.3f, etheta=%.3f (%.1f°)",
+                          cte, etheta, etheta * 180.0 / M_PI);
+    } else {
+        // Fallback: compute from reference trajectory
+        if (!reference_trajectory_.empty()) {
+            Eigen::VectorXd ref_state = reference_trajectory_[0];
+            double ref_theta = ref_state(2);
+            double current_theta = tf::getYaw(current_odom_.pose.pose.orientation);
+            etheta = normalizeAngle(current_theta - ref_theta);
+
+            ROS_INFO_THROTTLE(2.0, "⚠️  Computing etheta from reference: %.3f (%.1f°) [no tube_mpc error]",
+                              etheta, etheta * 180.0 / M_PI);
+        } else {
+            ROS_WARN_THROTTLE(2.0, "⚠️  No tube_mpc error data and no reference trajectory!");
+        }
+    }
+
     current_state << current_odom_.pose.pose.position.x,
                      current_odom_.pose.pose.position.y,
                      tf::getYaw(current_odom_.pose.pose.orientation),
                      current_odom_.twist.twist.linear.x,
-                     0.0,  // cte
-                     0.0;  // etheta
+                     cte,   // ✅ Use actual cte from tube_mpc
+                     etheta; // ✅ Use actual etheta from tube_mpc
 
     // CRITICAL FIX: Update DR margins before solving
     if (dr_enabled_ && dr_received_) {
@@ -618,9 +773,21 @@ void SafeRegretMPCNode::solveMPC() {
             ROS_DEBUG("MPC solved: v=%.3f, w=%.3f", cmd_vel_.linear.x, cmd_vel_.angular.z);
         }
     } else {
-        ROS_WARN("MPC solve failed! Publishing zero velocity...");
-        cmd_vel_.linear.x = 0.0;
-        cmd_vel_.angular.z = 0.0;
+        // ✅ FIX: When MPC fails during in-place rotation, continue rotating instead of stopping
+        if (mpc_solver_->isInPlaceRotation()) {
+            // Maintain rotation command even if MPC fails
+            double fixed_angular_vel = 0.5;  // rad/s
+            double rotation_direction = (etheta >= 0) ? -1.0 : 1.0;
+            cmd_vel_.linear.x = 0.0;
+            cmd_vel_.angular.z = rotation_direction * fixed_angular_vel;
+
+            ROS_WARN_THROTTLE(2.0, "⚠️  MPC failed but CONTINUING ROTATION: v=%.3f, w=%.3f (etheta=%.1f°)",
+                              cmd_vel_.linear.x, cmd_vel_.angular.z, etheta * 180.0 / M_PI);
+        } else {
+            ROS_WARN("MPC solve failed! Publishing zero velocity...");
+            cmd_vel_.linear.x = 0.0;
+            cmd_vel_.angular.z = 0.0;
+        }
     }
 }
 
@@ -692,6 +859,17 @@ void SafeRegretMPCNode::checkSystemReady() {
     if (!system_ready_ && isSystemReady()) {
         ROS_INFO("System ready! Starting control...");
     }
+}
+
+double SafeRegretMPCNode::normalizeAngle(double angle) const {
+    // Normalize angle to [-π, π]
+    while (angle > M_PI) {
+        angle -= 2.0 * M_PI;
+    }
+    while (angle < -M_PI) {
+        angle += 2.0 * M_PI;
+    }
+    return angle;
 }
 
 // ========== Services ==========

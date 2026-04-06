@@ -75,7 +75,7 @@ add_library(tube_global_planner_lib src/global_planner/global_planner.cpp)
 TARGET_LINK_LIBRARIES(tube_global_planner_lib ipopt ${catkin_LIBRARIES} )
 
 # MPC Local planner plugin
-add_library(tube_mpc_lib src/mpc_plannner_ros.cpp src/mpc_plannner.cpp)
+add_library(tube_mpc_lib src/mpc_plannner_ros.cpp src/mpc_plannner.cpp src/TubeMPCMetricsCollector.cpp)
 TARGET_LINK_LIBRARIES(tube_mpc_lib ipopt ${catkin_LIBRARIES} )
 
 #############

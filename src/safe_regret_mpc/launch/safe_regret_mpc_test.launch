@@ -51,6 +51,11 @@
   <arg name="pitch" default="0"/>      <!-- 无俯仰 -->
   <arg name="yaw" default="0.0"/>      <!-- Station S1: 朝向东（正X方向） -->
 
+  <!-- ========== Phase 6: Logistics Task Pickup Point (可变取货点) ========== -->
+  <arg name="pickup_x" default="0.0"/>      <!-- 取货点S1: X坐标 (可通过命令行修改) -->
+  <arg name="pickup_y" default="-7.0"/>     <!-- 取货点S1: Y坐标 (可通过命令行修改) -->
+  <arg name="pickup_yaw" default="0.0"/>    <!-- 取货点S1: 朝向 (弧度) -->
+
   <!-- ========== Parameters ========== -->
   <rosparam file="$(find safe_regret_mpc)/params/safe_regret_mpc_params.yaml" command="load"/>
 
@@ -193,9 +198,27 @@
   <!-- ========== Auto Navigation Goal (Phase 6: S1 → S2 Logistics Task) ========== -->
   <node name="auto_nav_goal" pkg="safe_regret_mpc" type="auto_nav_goal.py" output="screen"
         launch-prefix="bash -c 'sleep 5; $0 $@'">
-    <param name="~goal_x" value="8.0"/>    <!-- Station S2: 卸载区X坐标 -->
-    <param name="~goal_y" value="0.0"/>     <!-- Station S2: Y坐标 -->
-    <param name="~goal_yaw" value="0.0"/>   <!-- 朝向东 -->
+    <!-- 取货点 S1 (Pickup Station) - 可通过命令行参数修改 -->
+    <param name="pickup_x" value="$(arg pickup_x)"/>    <!-- 取货点X坐标 -->
+    <param name="pickup_y" value="$(arg pickup_y)"/>    <!-- 取货点Y坐标 -->
+    <param name="pickup_yaw" value="$(arg pickup_yaw)"/><!-- 取货点朝向 -->
+
+    <!-- 卸货点 S2 (Delivery Station) - 固定坐标 -->
+    <param name="delivery_x" value="8.0"/>    <!-- 卸货点X坐标 (固定) -->
+    <param name="delivery_y" value="0.0"/>    <!-- 卸货点Y坐标 (固定) -->
+    <param name="delivery_yaw" value="0.0"/>  <!-- 卸货点朝向 -->
+
+    <!-- 目标到达阈值 -->
+    <param name="goal_radius" value="0.5"/>   <!-- 到达判定半径 (m) -->
+  </node>
+
+  <!-- ========== Random Obstacles (启动时随机放置障碍物) ========== -->
+  <node name="random_obstacles" pkg="safe_regret_mpc" type="random_obstacles.py" output="screen"
+        launch-prefix="bash -c 'sleep 2; $0 $@'">
+    <param name="safety_radius" value="0.6"/>                      <!-- 目标点安全半径 (m) -->
+    <param name="robot_safety_radius" value="1.5"/>                <!-- 小车周围安全半径 (m) -->
+    <param name="robot_start_x" value="$(arg x_pos)"/>             <!-- 小车初始X坐标 -->
+    <param name="robot_start_y" value="$(arg y_pos)"/>             <!-- 小车初始Y坐标 -->
   </node>
 
 </launch>

@@ -1457,4 +1457,141 @@ rm -rf build/safe_regret_mpc devel/lib/safe_regret_mpc
 catkin_make --only-pkg-with-deps safe_regret_mpc
 source devel/setup.bash
 ```
-打开全功能后那个大角度自动原地转弯的功能失效了
+不是在180度摆头！是明明都已经转了小半圈了却还是转回反方向                     
+                                                                                
+● 明白了！不是边界跳变问题，而是方向没有锁定的问题。                            
+                                                                                
+  让我先确认一下具体症状：                                                      
+                                                                  
+  场景1：从100°开始旋转                                                         
+  - 100° → 80° → 60° → 突然反向 → 70° → 90° → 100°...             
+
+  场景2：从-100°开始旋转
+  - -100° → -80° → -60° → 突然反向 → -70° → -90° → -100°...
+
+  是这种情况吗？机器人会往一个方向转一会儿，然后突然反向转回去？
+
+  如果是这样，问题就是：每次调用applyRotationSpeedLimit()时都重新计算方向，而不
+  是在进入旋转模式时锁定方向。
+
+  正确的逻辑应该是：
+  进入旋转时(etheta=100°): 锁定方向 = -1.0 (逆时针)
+  旋转到50°: 使用锁定方向 = -1.0 ✅ 继续逆时针
+  旋转到10°: 使用锁定方向 = -1.0 ✅ 继续逆时针
+  退出旋转: 解锁
+
+  现在的错误逻辑：
+  进入旋转时(etheta=100°): 计算方向 = -1.0 (逆时针)
+  旋转到50°: 重新计算方向 = -1.0 (逆时针)
+  如果etheta跳变: 计算方向 = +1.0 ❌ 突然反向！
+
+  是这个意思吗？如果是的话，我需要实现方向锁定机制。
+
+❯ 是的
+好的，明白了！现在完成方向锁定机制的实现。                                    
+                                               
+  继续修改updateInPlaceRotation()，在进入旋转时锁定方向：                       
+   
+● Update(src/safe_regret_mpc/src/SafeRegretMPC.cpp)                             
+  ⎿  Added 12 lines                                               
+      395      if (std::abs(etheta) > HEADING_ERROR_CRITICAL &&          
+           !in_place_rotation_) {                                        
+      396          // Entry condition: angle > 90° AND not currently in         
+           rotation mode                                                 
+      397          in_place_rotation_ = true;                                   
+      398 +                                                              
+      399 +        // ✅ LOCK rotation direction when entering rotation  
+          +mode                                                          
+      400 +        rotation_direction_locked_ = true;                    
+      401 +        locked_rotation_direction_ = (etheta >= 0) ? -1.0 :   
+          +1.0;                                                          
+      402 +                                                              
+      403          std::cout << "\n╔════════════════════════════════════
+           ════════════════════╗\n"
+      404                    << "║  🔄 ENTERING PURE ROTATION MODE
+                             ║\n"
+      405                    << "╠══════════════════════════════════════
+           ══════════════════╣\n"
+      406                    << "║  Current heading error: " <<
+           (std::abs(etheta) * 180.0 / M_PI) << "° (>90°)
+              ║\n"
+      407                    << "║  Exit condition: < 10°
+                              ║\n"
+      408 +                  << "║  Direction LOCKED: " <<               
+          +(locked_rotation_direction_ > 0 ? "Clockwise" :               
+          +"Counter-Clockwise") << "           ║\n"                      
+      409                    << "║  Action: Speed FORCED to 0.0 m/s
+                             ║\n"
+      410                    << "║         Only in-place rotation
+           ALLOWED                 ║\n"
+      411                    << "╚══════════════════════════════════════
+           ══════════════════╝\n" << std::endl;
+     ...
+      407          // Exit condition: in rotation mode AND angle < 10°
+      408          // Note: Both conditions must be met to exit
+      409          in_place_rotation_ = false;
+      410 +                                                              
+      411 +        // ✅ UNLOCK rotation direction when exiting          
+      412 +        rotation_direction_locked_ = false;                   
+      413 +        locked_rotation_direction_ = 0.0;                     
+      414 +                                                              
+      415          std::cout << "\n╔════════════════════════════════════
+           ════════════════════╗\n"
+      416                    << "║  ✅ EXITING PURE ROTATION MODE
+                             ║\n"
+      417                    << "╠══════════════════════════════════════
+           ══════════════════╣\n"
+      418                    << "║  Current heading error: " <<
+           (std::abs(etheta) * 180.0 / M_PI) << "° (<10°)
+               ║\n"
+      419 +                  << "║  Direction UNLOCKED                   
+          +                 ║\n"                                         
+      420                    << "║  Action: Normal motion RESUMED
+                             ║\n"
+      421                    << "╚══════════════════════════════════════
+           ══════════════════╝\n" << std::endl;
+      422      }
+
+● 现在修改applyRotationSpeedLimit()使用锁定的方向：
+
+● Update(src/safe_regret_mpc/src/SafeRegretMPC.cpp)                             
+  ⎿  Added 13 lines, removed 2 lines
+      446          // ✅ FIX: Also override angular velocity to prevent         
+           MPC from "pulling back"                                       
+      447          // MPC tries to compensate for zero linear speed by          
+           oscillating angular velocity                                  
+      448          const double fixed_angular_vel = 0.5;  // rad/s              
+           (~29°/s)                                                      
+      449 -        double rotation_direction = (etheta >= 0) ? -1.0 :    
+          -1.0;                                                          
+      449 +                                                              
+      450 +        // ✅ Use LOCKED rotation direction to prevent        
+          +oscillation                                                   
+      451 +        double rotation_direction;                            
+      452 +        if (rotation_direction_locked_) {                     
+      453 +            rotation_direction = locked_rotation_direction_;  
+          + // ✅ Use locked direction                                   
+      454 +        } else {                                              
+      455 +            // Fallback: determine direction from etheta sign 
+      456 +            rotation_direction = (etheta >= 0) ? -1.0 : 1.0;  
+      457 +        }                                                     
+      458 +                                                              
+      459          angular_vel = rotation_direction * fixed_angular_vel;
+      460   
+      461          std::cout << "🔄 [PURE ROTATION] Speed LOCKED at 0.0
+           m/s | "
+      462                    << "Angular vel OVERRIDDEN to " <<
+           angular_vel << " rad/s ("
+      463 -                  << (angular_vel * 180.0 / M_PI) << "°/s)" <<
+          - std::endl;                                                   
+      463 +                  << (angular_vel * 180.0 / M_PI) << "°/s) | "
+      464 +                  << "Direction " <<                          
+          +(rotation_direction_locked_ ? "LOCKED" : "computed")          
+      465 +                  << std::endl;                               
+      466      }
+      467  }
+      468   
+  ⎿  API Error: 429 {"error":{"code":"1308","message":"已达到 5 
+     小时的使用上限。您的限额将在 2026-04-05 19:19:17 
+     重置。"},"request_id":"20260405153132f73906afeca64108"}
+上次的进度如上
