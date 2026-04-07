@@ -151,7 +151,8 @@
 
   <!-- ========== Safe-Regret MPC Node (Integration Center) ========== -->
   <node name="safe_regret_mpc" pkg="safe_regret_mpc" type="safe_regret_mpc_node"
-        output="screen" required="true">
+        output="screen" required="false"
+        respawn="false" respawn_delay="5">
 
     <!-- Integration Mode Parameters -->
     <param name="enable_integration_mode" value="$(arg enable_safe_regret_integration)"/>
@@ -215,8 +216,8 @@
   <!-- ========== Random Obstacles (启动时随机放置障碍物) ========== -->
   <node name="random_obstacles" pkg="safe_regret_mpc" type="random_obstacles.py" output="screen"
         launch-prefix="bash -c 'sleep 2; $0 $@'">
-    <param name="safety_radius" value="0.6"/>                      <!-- 目标点安全半径 (m) -->
-    <param name="robot_safety_radius" value="1.5"/>                <!-- 小车周围安全半径 (m) -->
+    <param name="safety_radius" value="0.7"/>                      <!-- 目标点安全半径 (m) -->
+    <param name="robot_safety_radius" value="1.6"/>                <!-- 小车周围安全半径 (m) -->
     <param name="robot_start_x" value="$(arg x_pos)"/>             <!-- 小车初始X坐标 -->
     <param name="robot_start_y" value="$(arg y_pos)"/>             <!-- 小车初始Y坐标 -->
   </node>

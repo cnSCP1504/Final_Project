@@ -11,8 +11,8 @@ system:
 # ========== MPC Parameters ==========
 mpc:
   horizon: 20                  # Prediction horizon N
-  ref_vel: 0.5                 # Reference velocity (m/s)
-  max_angvel: 3.5             # Maximum angular velocity (rad/s)
+  ref_vel: 0.3                 # 降低参考速度 (原0.5)
+  max_angvel: 5.0             # 增加最大角速度 (原3.5)
 
   # Cost weights
   w_cte: 100.0                 # Cross-track error weight
@@ -89,7 +89,7 @@ terminal_set:
   theta_min: -3.14159
   theta_max: 3.14159
   v_min: 0.0
-  v_max: 1.0
+  v_max: 0.6  # 降低终端集最大速度 (原1.0)
 
   # Update frequency
   update_frequency: 0.2      # Hz (every 5 seconds)
@@ -159,8 +159,8 @@ constraints:
   x_max: [10.0, 10.0, 3.14159, 1.0, 1.0, 0.5]
 
   # Input bounds
-  u_min: [0.0, -1.5]
-  u_max: [1.0, 1.5]
+  u_min: [0.0, -2.5]
+  u_max: [0.6, 2.5]  # 降低线速度上限 (原1.0→0.6)，增加角速度上限 (原1.5→2.5)
 
 # ========== Topic Names ==========
 topics:

@@ -92,10 +92,10 @@ class ObstacleSpawner:
         obstacle_size = 1.5
 
         for attempt in range(max_attempts):
-            # X坐标限制在[-4, 4]
-            x = random.uniform(-4.0, 4.0)
-            # Y坐标在[-10, 10]
-            y = random.uniform(self.map_min_y + obstacle_size/2, self.map_max_y - obstacle_size/2)
+            # X坐标限制在[-6, 6]
+            x = random.uniform(-6.0, 6.0)
+            # Y坐标在[-2.5, 2.5]
+            y = random.uniform(-2.5, 2.5)
 
             # 检查安全性
             if self.is_safe_position(x, y):

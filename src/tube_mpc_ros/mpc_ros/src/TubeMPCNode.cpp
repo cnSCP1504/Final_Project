@@ -646,9 +646,15 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         if(_in_place_rotation) {
             if(!_rotation_direction_locked) {
                 // 第一次进入旋转模式，确定并锁定旋转方向
-                // ✅ FIX: 修正方向计算，与SafeRegretMPC保持一致
-                // etheta > 0 表示需要逆时针旋转（负方向），etheta < 0 表示需要顺时针旋转（正方向）
-                _rotation_direction = (etheta > 0) ? -1.0 : 1.0;
+                // ✅ FIX: 修正方向计算错误（2026-04-06）
+                // 在ROS坐标系中：
+                //   - 角速度为正（>0）= 逆时针旋转（CCW）
+                //   - 角速度为负（<0）= 顺时针旋转（CW）
+                //   - etheta = 目标角度 - 当前角度
+                // 因此：
+                //   - etheta > 0 表示需要逆时针旋转 → 角速度为正
+                //   - etheta < 0 表示需要顺时针旋转 → 角速度为负
+                _rotation_direction = (etheta >= 0) ? 1.0 : -1.0;
                 _rotation_direction_locked = true;
                 cout << "[ROTATION] Direction LOCKED: " << (_rotation_direction > 0 ? "CW (+)" : "CCW (-)") << endl;
             }

@@ -44,7 +44,7 @@ class RandomObstacles:
         rospy.loginfo("=" * 60)
         rospy.loginfo("随机障碍物管理器启动")
         rospy.loginfo("=" * 60)
-        rospy.loginfo(f"障碍物随机范围: X ∈ [-6, 6] m, Y ∈ [-3.75, 3.75] m")
+        rospy.loginfo(f"障碍物随机范围: X ∈ [-6, 6] m, Y ∈ [-2.5, 2.5] m")
         rospy.loginfo(f"目标点安全半径: {self.safety_radius} m")
         rospy.loginfo(f"小车安全半径: {self.robot_safety_radius} m")
         rospy.loginfo(f"小车初始位置: ({self.robot_start_x}, {self.robot_start_y})")
@@ -99,7 +99,7 @@ class RandomObstacles:
         for attempt in range(max_attempts):
             # 生成随机位置（限制在指定范围内）
             x = random.uniform(-6.0, 6.0)  # X坐标限制在[-6, 6]范围内
-            y = random.uniform(-3.75, 3.75)  # Y坐标限制在[-3.75, 3.75]范围内
+            y = random.uniform(-2.5, 2.5)  # Y坐标限制在[-2.5, 2.5]范围内
 
             # 检查是否在安全范围内
             if self.is_safe_position(x, y):

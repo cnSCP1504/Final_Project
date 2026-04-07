@@ -43,8 +43,8 @@ max_velocity: 2.0
 # Maximum curvature κ(z_k) ≤ κ_max
 max_curvature: 1.0
 
-# Tube radius ē (for 𝒳 ⊖ ℰ)
-tube_radius: 0.5
+# Tube radius ē (for 𝒳 ⊖ ℰ, increased by 0.1)
+tube_radius: 0.6
 
 # ============================================================================
 # STL Specification Parameters

@@ -4,12 +4,12 @@ MPCPlannerROS:
   odom_frame: odom
   base_frame: base_footprint
   min_trans_vel: 0.1
-  max_vel_x: 1.5  # 提高最大线速度
+  max_vel_x: 0.8  # 降低最大线速度 (原1.5)
   min_vel_x: -0.1
   max_vel_y: 0.0
   min_vel_y: 0.0
   trans_stopped_vel: 0.1
-  max_rot_vel: 3.5
+  max_rot_vel: 3.5  # 保持原值
   min_rot_vel: 0.1
   rot_stopped_vel: 0.1
   acc_lim_x: 3.0
@@ -29,13 +29,13 @@ MPCPlannerROS:
   publish_traj_pc: true
   publish_cost_grid_pc: true
   debug_info: true
-  max_speed: 1.0
+  max_speed: 0.6  # 降低最大速度 (原1.0)
   waypoints_dist: -1.0
   path_length: 8.0
   controller_freq: 10
   mpc_steps: 20
   mpc_ref_cte: 0.0
-  mpc_ref_vel: 0.8  # 提高参考速度，让MPC输出更大的throttle
+  mpc_ref_vel: 0.5  # 降低参考速度 (原0.8)
   mpc_ref_etheta: 0.0
   mpc_w_cte: 50.0
   mpc_w_etheta: 30.0  # 略高于cte，优先转向但不过度
@@ -44,10 +44,10 @@ MPCPlannerROS:
   mpc_w_angvel_d: 30.0
   mpc_w_accel: 10.0  # 降低加速度权重，允许更大加速度
   mpc_w_accel_d: 5.0
-  mpc_max_angvel: 3
+  mpc_max_angvel: 3  # 保持原值
   mpc_max_throttle: 10.0  # 大幅提高throttle上限，从2.0提高到10.0
   mpc_bound_value: 1.0e3
-  disturbance_bound: 0.20  # 增加到0.20，提高安全性（原0.15）
+  disturbance_bound: 0.30  # 增加到0.30，提高安全性（原0.20→0.30）
   enable_adaptive_disturbance: true
   disturbance_window_size: 100
   tube_visualization: true

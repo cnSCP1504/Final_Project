@@ -36,7 +36,387 @@ from pathlib import Path
 import threading
 import rospy
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Twist
 import math
+import numpy as np
+from collections import defaultdict
+
+class ManuscriptMetricsCollector:
+    """
+    Manuscript性能指标收集器
+
+    收集manuscript中要求的7类关键指标：
+    1. Satisfaction probability (STL robustness)
+    2. Empirical risk (safety violations)
+    3. Dynamic/Safe regret
+    4. Recursive feasibility rate
+    5. Computation metrics (solve time, failures)
+    6. Tracking error and tube occupancy
+    7. Calibration accuracy
+    """
+
+    def __init__(self):
+        self.data = {
+            # 1. STL Robustness Data
+            'stl_robustness_history': [],      # STL robustness values
+            'stl_budget_history': [],           # Budget values
+            'stl_satisfaction_count': 0,        # Steps with rho >= 0
+            'stl_total_steps': 0,               # Total steps evaluated
+
+            # 2. Safety/Empirical Risk Data
+            'safety_violations': [],            # Steps where h(x) < 0
+            'dr_margins_history': [],           # DR margin values
+            'tracking_error_history': [],       # Tracking error norms
+            'safety_violation_count': 0,        # Count of safety violations
+            'safety_total_steps': 0,            # Total steps monitored
+
+            # 3. Regret Data (需要参考策略数据)
+            'instantaneous_cost': [],           # Instantaneous cost l(x,u)
+            'reference_cost': [],               # Reference policy cost
+            'dynamic_regret': [],               # Dynamic regret values
+            'safe_regret': [],                  # Safe regret values
+
+            # 4. Feasibility Data
+            'mpc_feasible_count': 0,            # Feasible MPC solves
+            'mpc_infeasible_count': 0,          # Infeasible MPC solves
+            'mpc_total_solves': 0,              # Total MPC solve attempts
+            'feasibility_rate': 0.0,            # Feasibility rate
+
+            # 5. Computation Metrics
+            'mpc_solve_times': [],              # Individual solve times (ms)
+            'mpc_solve_time_median': 0.0,       # Median solve time
+            'mpc_solve_time_p90': 0.0,          # 90th percentile solve time
+            'mpc_failure_count': 0,             # Failed solve attempts
+
+            # 6. Tracking Error & Tube Data
+            'tracking_error_norm_history': [],  # ||e_t||_2 values
+            'tube_violations': [],              # Steps with e_t not in E
+            'tube_violation_count': 0,          # Count of tube violations
+            'tube_occupancy_rate': 0.0,         # Fraction of time in tube
+
+            # 7. Calibration Data
+            'target_delta': 0.05,               # Target risk level
+            'observed_violation_rate': 0.0,     # Actual violation rate
+            'calibration_error': 0.0,           # |observed - target|
+        }
+
+        # ROS订阅者
+        self.subscribers = {}
+
+        # 统计辅助数据
+        self.start_time = None
+        self.step_count = 0
+
+    def reset(self):
+        """重置所有数据收集器"""
+        for key in self.data:
+            if isinstance(self.data[key], list):
+                self.data[key] = []
+            elif isinstance(self.data[key], (int, float)):
+                self.data[key] = 0
+        self.start_time = None
+        self.step_count = 0
+
+    def setup_ros_subscribers(self):
+        """设置所有需要的ROS话题订阅"""
+        try:
+            # 1. STL Robustness (from stl_monitor)
+            # 注意：stl_monitor发布的是Float32，不是Float64！
+            try:
+                from std_msgs.msg import Float32
+                self.subscribers['stl_robustness'] = rospy.Subscriber(
+                    '/stl_monitor/robustness', Float32, self.stl_robustness_callback)
+                self.subscribers['stl_budget'] = rospy.Subscriber(
+                    '/stl_monitor/budget', Float32, self.stl_budget_callback)
+            except Exception as e:
+                TestLogger.warning(f"无法订阅STL话题: {e}")
+
+            # 2. DR Margins (from dr_tightening)
+            # 注意：launch文件将话题remap成了 /dr_margins
+            try:
+                from std_msgs.msg import Float64MultiArray
+                self.subscribers['dr_margins'] = rospy.Subscriber(
+                    '/dr_margins', Float64MultiArray, self.dr_margins_callback)
+            except Exception as e:
+                TestLogger.warning(f"无法订阅DR话题: {e}")
+
+            # 3. Tracking Error (from tube_mpc)
+            # 注意：tube_mpc发布的是Float64MultiArray，不是Float64！
+            try:
+                from std_msgs.msg import Float64MultiArray
+                self.subscribers['tracking_error'] = rospy.Subscriber(
+                    '/tube_mpc/tracking_error', Float64MultiArray, self.tracking_error_callback)
+            except Exception as e:
+                TestLogger.warning(f"无法订阅tracking_error话题: {e}")
+
+            # 4. MPC Solver Stats (from tube_mpc MetricsCollector)
+            # 注意：实际话题名称是 /mpc_metrics/*，不是 /mpc_solver/*
+            try:
+                from std_msgs.msg import Float64
+                self.subscribers['mpc_solve_time'] = rospy.Subscriber(
+                    '/mpc_metrics/solve_time_ms', Float64, self.mpc_solve_time_callback)
+                self.subscribers['mpc_feasibility'] = rospy.Subscriber(
+                    '/mpc_metrics/feasibility_rate', Float64, self.mpc_feasibility_callback)
+            except Exception as e:
+                TestLogger.warning(f"无法订阅MPC solver话题: {e}")
+
+            # 5. Tube Boundaries (for tube occupancy)
+            try:
+                from geometry_msgs.msg import PolygonStamped
+                self.subscribers['tube_boundaries'] = rospy.Subscriber(
+                    '/tube_boundaries', PolygonStamped, self.tube_boundaries_callback)
+            except Exception as e:
+                TestLogger.warning(f"无法订阅tube_boundaries话题: {e}")
+
+            TestLogger.success("Manuscript Metrics订阅者设置完成")
+
+        except Exception as e:
+            TestLogger.error(f"设置ROS订阅者时出错: {e}")
+
+    def shutdown_subscribers(self):
+        """关闭所有订阅者"""
+        for name, sub in self.subscribers.items():
+            try:
+                sub.unregister()
+            except:
+                pass
+        self.subscribers.clear()
+
+    # === 回调函数 ===
+
+    def stl_robustness_callback(self, msg):
+        """STL鲁棒性回调"""
+        rho = msg.data
+        self.data['stl_robustness_history'].append(rho)
+        self.data['stl_total_steps'] += 1
+        if rho >= 0:
+            self.data['stl_satisfaction_count'] += 1
+
+    def stl_budget_callback(self, msg):
+        """STL预算回调"""
+        self.data['stl_budget_history'].append(msg.data)
+
+    def dr_margins_callback(self, msg):
+        """DR边界回调"""
+        if len(msg.data) > 0:
+            # 保存所有margin值
+            self.data['dr_margins_history'].extend(msg.data)
+
+    def tracking_error_callback(self, msg):
+        """跟踪误差回调 - 接收Float64MultiArray"""
+        # msg.data 是一个数组，包含 [error_x, error_y, error_yaw, error_norm]
+        if len(msg.data) >= 4:
+            error_norm = msg.data[3]  # 第四个元素是误差范数
+            self.data['tracking_error_norm_history'].append(error_norm)
+
+            # 检查是否违反tube约束（假设tube半径为0.18）
+            tube_radius = 0.18
+            if error_norm > tube_radius:
+                self.data['tube_violations'].append(error_norm)
+                self.data['tube_violation_count'] += 1
+
+            # 计算empirical risk（违反DR安全边界）
+            # 安全违反定义为：tracking_error > 最新DR margin
+            self.data['safety_total_steps'] += 1
+            if len(self.data['dr_margins_history']) > 0:
+                # 获取最新的DR margin（假设是最后添加的）
+                latest_dr_margin = self.data['dr_margins_history'][-1]
+                if error_norm > latest_dr_margin:
+                    self.data['safety_violation_count'] += 1
+                    self.data['safety_violations'].append(error_norm)
+        else:
+            TestLogger.warning(f"tracking_error数据长度不足: {len(msg.data)}")
+
+    def mpc_solve_time_callback(self, msg):
+        """MPC求解时间回调"""
+        solve_time = msg.data  # 毫秒
+        self.data['mpc_solve_times'].append(solve_time)
+
+    def mpc_feasibility_callback(self, msg):
+        """MPC可行性回调 (1.0 = feasible, 0.0 = infeasible)"""
+        feasible = msg.data > 0.5
+        self.data['mpc_total_solves'] += 1
+        if feasible:
+            self.data['mpc_feasible_count'] += 1
+        else:
+            self.data['mpc_infeasible_count'] += 1
+            self.data['mpc_failure_count'] += 1
+
+    def tube_boundaries_callback(self, msg):
+        """Tube边界回调（用于高级分析）"""
+        # 这里可以保存tube的多边形形状用于可视化
+        pass
+
+    # === 计算指标 ===
+
+    def compute_final_metrics(self):
+        """计算所有最终指标"""
+        metrics = {}
+
+        # 1. Satisfaction Probability
+        if self.data['stl_total_steps'] > 0:
+            metrics['satisfaction_probability'] = (
+                self.data['stl_satisfaction_count'] / self.data['stl_total_steps']
+            )
+        else:
+            metrics['satisfaction_probability'] = None
+
+        # 2. Empirical Risk (安全违反率)
+        if self.data['safety_total_steps'] > 0:
+            metrics['empirical_risk'] = (
+                self.data['safety_violation_count'] / self.data['safety_total_steps']
+            )
+        else:
+            metrics['empirical_risk'] = None
+
+        # 3. Dynamic & Safe Regret (平均值)
+        if len(self.data['dynamic_regret']) > 0:
+            metrics['avg_dynamic_regret'] = np.mean(self.data['dynamic_regret'])
+        else:
+            metrics['avg_dynamic_regret'] = None
+
+        if len(self.data['safe_regret']) > 0:
+            metrics['avg_safe_regret'] = np.mean(self.data['safe_regret'])
+        else:
+            metrics['avg_safe_regret'] = None
+
+        # 4. Recursive Feasibility Rate
+        if self.data['mpc_total_solves'] > 0:
+            metrics['feasibility_rate'] = (
+                self.data['mpc_feasible_count'] / self.data['mpc_total_solves']
+            )
+        else:
+            metrics['feasibility_rate'] = None
+
+        # 5. Computation Metrics
+        if len(self.data['mpc_solve_times']) > 0:
+            solve_times = np.array(self.data['mpc_solve_times'])
+            metrics['median_solve_time'] = np.median(solve_times)
+            metrics['p90_solve_time'] = np.percentile(solve_times, 90)
+            metrics['mean_solve_time'] = np.mean(solve_times)
+            metrics['std_solve_time'] = np.std(solve_times)
+        else:
+            metrics['median_solve_time'] = None
+            metrics['p90_solve_time'] = None
+            metrics['mean_solve_time'] = None
+            metrics['std_solve_time'] = None
+
+        metrics['mpc_failure_count'] = self.data['mpc_failure_count']
+
+        # 6. Tracking Error & Tube Occupancy
+        if len(self.data['tracking_error_norm_history']) > 0:
+            errors = np.array(self.data['tracking_error_norm_history'])
+            metrics['mean_tracking_error'] = np.mean(errors)
+            metrics['std_tracking_error'] = np.std(errors)
+            metrics['max_tracking_error'] = np.max(errors)
+            metrics['min_tracking_error'] = np.min(errors)
+
+            # Tube occupancy rate
+            metrics['tube_occupancy_rate'] = 1.0 - (
+                self.data['tube_violation_count'] / len(errors)
+            )
+        else:
+            metrics['mean_tracking_error'] = None
+            metrics['std_tracking_error'] = None
+            metrics['max_tracking_error'] = None
+            metrics['min_tracking_error'] = None
+            metrics['tube_occupancy_rate'] = None
+
+        metrics['tube_violation_count'] = self.data['tube_violation_count']
+
+        # 7. Calibration Accuracy
+        if self.data['safety_total_steps'] > 0:
+            metrics['observed_violation_rate'] = (
+                self.data['safety_violation_count'] / self.data['safety_total_steps']
+            )
+            metrics['calibration_error'] = abs(
+                metrics['observed_violation_rate'] - self.data['target_delta']
+            )
+        else:
+            metrics['observed_violation_rate'] = None
+            metrics['calibration_error'] = None
+
+        # 附加统计信息
+        metrics['total_steps'] = self.data['stl_total_steps']
+        metrics['total_mpc_solves'] = self.data['mpc_total_solves']
+
+        return metrics
+
+    def get_raw_data(self):
+        """获取原始数据用于详细分析"""
+        return self.data.copy()
+
+    def print_summary(self):
+        """打印指标摘要"""
+        metrics = self.compute_final_metrics()
+
+        print("\n" + "=" * 70)
+        print("📊 MANUSCRIPT性能指标摘要 / MANUSCRIPT PERFORMANCE METRICS SUMMARY")
+        print("=" * 70)
+
+        # 1. Satisfaction Probability
+        if metrics['satisfaction_probability'] is not None:
+            print(f"\n1️⃣  Satisfaction Probability (STL满足率):")
+            print(f"   - ρ(φ) ≥ 0: {self.data['stl_satisfaction_count']}/{self.data['stl_total_steps']} steps")
+            print(f"   - 概率: {metrics['satisfaction_probability']:.3f}")
+        else:
+            print(f"\n1️⃣  Satisfaction Probability: 无数据")
+
+        # 2. Empirical Risk
+        if metrics['empirical_risk'] is not None:
+            print(f"\n2️⃣  Empirical Risk (经验风险):")
+            print(f"   - 违反次数: {self.data['safety_violation_count']}/{self.data['safety_total_steps']}")
+            print(f"   - 违反率: {metrics['empirical_risk']:.4f}")
+            print(f"   - 目标风险 δ: {self.data['target_delta']:.2f}")
+        else:
+            print(f"\n2️⃣  Empirical Risk: 无数据")
+
+        # 3. Regret
+        if metrics['avg_dynamic_regret'] is not None:
+            print(f"\n3️⃣  Regret (遗憾):")
+            print(f"   - Dynamic Regret/T: {metrics['avg_dynamic_regret']:.4f}")
+        else:
+            print(f"\n3️⃣  Regret: 无数据")
+
+        # 4. Feasibility Rate
+        if metrics['feasibility_rate'] is not None:
+            print(f"\n4️⃣  Recursive Feasibility Rate (递归可行率):")
+            print(f"   - 可行/总求解: {self.data['mpc_feasible_count']}/{self.data['mpc_total_solves']}")
+            print(f"   - 可行率: {metrics['feasibility_rate']:.3f}")
+        else:
+            print(f"\n4️⃣  Recursive Feasibility Rate: 无数据")
+
+        # 5. Computation Metrics
+        if metrics['median_solve_time'] is not None:
+            print(f"\n5️⃣  Computation Metrics (计算性能):")
+            print(f"   - 中位数求解时间: {metrics['median_solve_time']:.2f} ms")
+            print(f"   - P90求解时间: {metrics['p90_solve_time']:.2f} ms")
+            print(f"   - 失败次数: {metrics['mpc_failure_count']}")
+        else:
+            print(f"\n5️⃣  Computation Metrics: 无数据")
+
+        # 6. Tracking Error & Tube
+        if metrics['mean_tracking_error'] is not None:
+            print(f"\n6️⃣  Tracking Error & Tube (跟踪误差与管状约束):")
+            print(f"   - 平均误差: {metrics['mean_tracking_error']:.4f} m")
+            print(f"   - 标准差: {metrics['std_tracking_error']:.4f} m")
+            print(f"   - 最大误差: {metrics['max_tracking_error']:.4f} m")
+            print(f"   - Tube占用率: {metrics['tube_occupancy_rate']:.3f}")
+            print(f"   - Tube违反次数: {metrics['tube_violation_count']}")
+        else:
+            print(f"\n6️⃣  Tracking Error & Tube: 无数据")
+
+        # 7. Calibration
+        if metrics['calibration_error'] is not None:
+            print(f"\n7️⃣  Calibration Accuracy (校准精度):")
+            print(f"   - 观察违反率: {metrics['observed_violation_rate']:.4f}")
+            print(f"   - 目标风险: {self.data['target_delta']:.2f}")
+            print(f"   - 校准误差: {metrics['calibration_error']:.4f}")
+        else:
+            print(f"\n7️⃣  Calibration Accuracy: 无数据")
+
+        print("\n" + "=" * 70)
+
 
 class Colors:
     """终端颜色代码"""
@@ -163,12 +543,18 @@ class ResultsManager:
         return test_dir
 
 class GoalMonitor:
-    """目标到达监控器"""
+    """目标到达监控器（集成Manuscript Metrics收集）"""
 
-    def __init__(self, goals, goal_radius=0.5, timeout=240):
+    # 类变量：跟踪ROS节点是否已初始化（避免重复初始化）
+    _node_initialized = False
+    # 移除全局订阅者，改为实例变量（修复第二次测试回调绑定问题）
+    # _subscriber = None  # 不再使用全局订阅者
+
+    def __init__(self, goals, goal_radius=0.5, timeout=240, launch_process=None):
         self.goals = goals
         self.goal_radius = goal_radius
         self.timeout = timeout
+        self.launch_process = launch_process  # 添加launch进程引用
 
         self.current_goal_index = 0
         self.goals_reached = []
@@ -176,14 +562,55 @@ class GoalMonitor:
         self.start_time = None
         self.monitoring = False
 
-        # Metrics
+        # 实例变量：odom订阅者（每次测试创建新的）
+        self.odom_subscriber = None
+
+        # Manuscript Metrics收集器
+        self.manuscript_metrics = ManuscriptMetricsCollector()
+
+        # 基础Metrics
         self.metrics = {
             'test_start_time': None,
             'test_end_time': None,
             'test_status': 'RUNNING',
             'total_goals': len(goals),
             'goals_reached': [],
-            'position_history': []
+            'position_history': [],
+            'ros_died': False,  # 添加ROS死亡标志
+            'manuscript_metrics': {}  # 添加manuscript指标
+        }
+
+    def reset(self, goals, goal_radius=0.5, timeout=240, launch_process=None):
+        """重置监控器状态（用于复用实例）"""
+        self.goals = goals
+        self.goal_radius = goal_radius
+        self.timeout = timeout
+        self.launch_process = launch_process
+
+        self.current_goal_index = 0
+        self.goals_reached = []
+        self.robot_position = None
+        self.start_time = None
+        self.monitoring = False
+
+        # 关键修复：注销旧的订阅者
+        if self.odom_subscriber is not None:
+            self.odom_subscriber.unregister()
+            self.odom_subscriber = None
+
+        # 重置Manuscript Metrics收集器
+        self.manuscript_metrics.reset()
+        self.manuscript_metrics.shutdown_subscribers()
+
+        # 重置Metrics
+        self.metrics = {
+            'test_start_time': None,
+            'test_end_time': None,
+            'test_status': 'RUNNING',
+            'total_goals': len(goals),
+            'goals_reached': [],
+            'position_history': [],
+            'ros_died': False
         }
 
     def odom_callback(self, msg):
@@ -214,8 +641,19 @@ class GoalMonitor:
                     'yaw': yaw
                 })
 
-        # 检查目标到达
+        # 检查目标到达（添加调试日志）
         if self.monitoring and self.current_goal_index < len(self.goals):
+            # 每5秒打印一次状态（避免日志过多）
+            elapsed = time.time() - self.start_time if self.start_time else 0
+            if int(elapsed) % 5 == 0 and int(elapsed) > 0:
+                goal = self.goals[self.current_goal_index]
+                distance = math.sqrt((goal[0] - x)**2 + (goal[1] - y)**2)
+                print(f"📍 [目标 {self.current_goal_index + 1}/{len(self.goals)}] "
+                      f"当前位置: ({x:.2f}, {y:.2f}), "
+                      f"目标: ({goal[0]:.2f}, {goal[1]:.2f}), "
+                      f"距离: {distance:.2f}m, "
+                      f"阈值: {self.goal_radius}m")
+
             self.check_goal_reached()
 
     def euler_from_quaternion(self, quaternion):
@@ -287,16 +725,21 @@ class GoalMonitor:
 
     def on_all_goals_reached(self):
         """所有目标到达"""
+        print("=" * 70)
+        print("🎉 所有目标已完成！测试成功！")
+        print(f"   已完成目标: {len(self.goals_reached)}/{len(self.goals)}")
+        print(f"   总用时: {time.time() - self.start_time:.1f} 秒")
+        print("=" * 70)
+
+        # 设置监控标志为False（关键！）
         self.metrics['test_status'] = 'SUCCESS'
         self.metrics['test_end_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.metrics['total_time'] = time.time() - self.start_time
 
-        print("=" * 70)
-        print("🎉 所有目标已完成！测试成功！")
-        print(f"   总用时: {self.metrics['total_time']:.1f} 秒")
-        print("=" * 70)
-
+        print(f"🔴 设置 monitoring = False (当前值: {self.monitoring})")
         self.monitoring = False
+        print(f"🔴 monitoring 已设置为: {self.monitoring}")
+        print("=" * 70)
 
     def check_timeout(self):
         """检查超时"""
@@ -313,11 +756,38 @@ class GoalMonitor:
             print(f"⏰ 测试超时 ({self.timeout} 秒)")
             print(f"   已完成目标: {len(self.goals_reached)}/{len(self.goals)}")
             print("=" * 70)
-
+            print(f"🔴 设置 monitoring = False (超时)")
             self.monitoring = False
             return True
 
         return False
+
+    def check_launch_process(self):
+        """检查launch进程是否还活着"""
+        if not self.launch_process:
+            return True  # 如果没有launch进程引用，假设还活着
+
+        # 检查进程是否还在运行
+        poll_result = self.launch_process.poll()
+        if poll_result is not None:
+            # 进程已经死了
+            self.metrics['test_status'] = 'ROS_DIED'
+            self.metrics['test_end_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.metrics['total_time'] = time.time() - self.start_time
+            self.metrics['ros_died'] = True
+            self.metrics['launch_exit_code'] = poll_result
+
+            print("=" * 70)
+            print("❌ ROS进程已崩溃！")
+            print(f"   Launch进程退出码: {poll_result}")
+            print(f"   已完成目标: {len(self.goals_reached)}/{len(self.goals)}")
+            print(f"   运行时间: {time.time() - self.start_time:.1f} 秒")
+            print("=" * 70)
+
+            self.monitoring = False
+            return False
+
+        return True
 
     def start_monitoring(self):
         """开始监控"""
@@ -329,20 +799,81 @@ class GoalMonitor:
             print(f"  目标 {i+1}: ({goal[0]:.2f}, {goal[1]:.2f}), yaw={goal[2]:.2f}")
         print(f"到达阈值: {self.goal_radius} m")
         print(f"超时时间: {self.timeout} 秒")
+        if self.launch_process:
+            print(f"Launch进程PID: {self.launch_process.pid}")
         print("=" * 70)
 
-        rospy.init_node('goal_monitor', anonymous=True)
-        rospy.Subscriber('/odom', Odometry, self.odom_callback)
+        # 关键修复：只在第一次调用时初始化ROS节点
+        if not GoalMonitor._node_initialized:
+            print("📡 初始化ROS节点...")
+            rospy.init_node('goal_monitor', anonymous=True)
+            GoalMonitor._node_initialized = True
+            print("✓ ROS节点已初始化")
+        else:
+            print("✓ ROS节点已存在，跳过初始化")
+
+        # 关键修复：每次测试都创建新的订阅者（修复回调绑定问题）
+        # 先注销旧的订阅者（如果存在）
+        if self.odom_subscriber is not None:
+            print("📡 注销旧的odom订阅者...")
+            self.odom_subscriber.unregister()
+            self.odom_subscriber = None
+
+        # 创建新的订阅者（绑定到当前实例的回调）
+        print("📡 创建新的odom订阅者...")
+        self.odom_subscriber = rospy.Subscriber('/odom', Odometry, self.odom_callback)
+        print("✓ 订阅者已创建（绑定到当前实例）")
+
+        # 设置Manuscript Metrics订阅者
+        print("📊 设置Manuscript Metrics订阅者...")
+        self.manuscript_metrics.setup_ros_subscribers()
 
         self.monitoring = True
         self.start_time = time.time()
         self.metrics['test_start_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        rate = rospy.Rate(10)
-        while not rospy.is_shutdown() and self.monitoring:
-            self.check_timeout()
-            rate.sleep()
+        print("🔵 开始监控循环...")
+        rate = rospy.Rate(10)  # 10Hz = 每0.1秒检查一次
+        loop_count = 0
 
+        while not rospy.is_shutdown() and self.monitoring:
+            loop_count += 1
+
+            # 检查超时
+            if self.check_timeout():
+                print("🔴 检测到超时，退出监控循环")
+                break
+
+            # 检查launch进程健康（关键修复！）
+            if not self.check_launch_process():
+                print("❌ 检测到ROS进程崩溃，停止监控")
+                break
+
+            # 每1秒打印一次状态（避免日志过多）
+            if loop_count % 10 == 0:
+                elapsed = time.time() - self.start_time
+                print(f"🔄 监控中... 已用时: {elapsed:.1f}s, "
+                      f"目标进度: {self.current_goal_index}/{len(self.goals)}, "
+                      f"monitoring={self.monitoring}")
+
+            # 🔥 关键修复：使用较短的sleep时间，以便更快响应 monitoring=False
+            # 不要使用 rate.sleep()，因为它可能阻塞较长时间
+            time.sleep(0.05)  # 50ms，比 rate.sleep() 更快响应
+
+        # 📊 计算Manuscript Metrics（在监控循环结束后）
+        print("📊 计算Manuscript性能指标...")
+        self.metrics['manuscript_metrics'] = self.manuscript_metrics.compute_final_metrics()
+
+        # 打印Manuscript Metrics摘要
+        self.manuscript_metrics.print_summary()
+
+        # 保存原始数据到文件
+        raw_data = self.manuscript_metrics.get_raw_data()
+        self.metrics['manuscript_raw_data'] = raw_data
+
+        print(f"🔵 监控循环退出 (loop_count={loop_count}, monitoring={self.monitoring})")
+        print(f"🔵 测试状态: {self.metrics['test_status']}")
+        print(f"🔵 准备返回... (success={self.metrics['test_status'] == 'SUCCESS'})")
         return self.metrics['test_status'] == 'SUCCESS'
 
 class AutomatedTestRunner:
@@ -350,6 +881,8 @@ class AutomatedTestRunner:
 
     def __init__(self, args):
         self.args = args
+        # 关键修复：使用单一的GoalMonitor实例，避免回调函数绑定问题
+        self.goal_monitor = None
         self.workspace_dir = Path(args.workspace)
         self.shelf_config = ShelfConfig(args.shelf_config)
         self.model_config = ModelConfig.get_model_params(args.model)
@@ -456,21 +989,40 @@ class AutomatedTestRunner:
 
         goals = [pickup_goal, delivery_goal]
 
-        monitor = GoalMonitor(
-            goals=goals,
-            goal_radius=0.5,
-            timeout=self.args.timeout
-        )
+        # 关键修复：复用单一的GoalMonitor实例，避免回调函数绑定问题
+        if self.goal_monitor is None:
+            # 第一次创建
+            TestLogger.info("创建GoalMonitor实例...")
+            self.goal_monitor = GoalMonitor(
+                goals=goals,
+                goal_radius=0.5,
+                timeout=self.args.timeout,
+                launch_process=self.launch_process
+            )
+        else:
+            # 后续测试：重置现有实例
+            TestLogger.info("重置GoalMonitor实例...")
+            self.goal_monitor.reset(
+                goals=goals,
+                goal_radius=0.5,
+                timeout=self.args.timeout,
+                launch_process=self.launch_process
+            )
 
         # 保存metrics
         metrics_file = test_dir / "metrics.json"
 
         try:
-            success = monitor.start_monitoring()
+            success = self.goal_monitor.start_monitoring()
 
             # 保存metrics
             with open(metrics_file, 'w') as f:
-                json.dump(monitor.metrics, f, indent=2)
+                json.dump(self.goal_monitor.metrics, f, indent=2)
+
+            # 如果ROS死了，返回False
+            if self.goal_monitor.metrics.get('ros_died', False):
+                TestLogger.error("ROS进程在测试中崩溃")
+                return False
 
             return success
 
@@ -500,20 +1052,40 @@ class AutomatedTestRunner:
         test_result = "SUCCESS"
 
         try:
-            if self.monitor_goals(shelf, test_dir):
+            TestLogger.info("🔵 开始调用 monitor_goals()...")
+            monitor_success = self.monitor_goals(shelf, test_dir)
+            TestLogger.info(f"🔵 monitor_goals() 返回: {monitor_success}")
+
+            if monitor_success:
                 TestLogger.success("测试成功")
             else:
-                TestLogger.warning("测试超时")
-                test_result = "TIMEOUT"
+                # 检查是否是ROS崩溃
+                metrics_file = test_dir / "metrics.json"
+                if metrics_file.exists():
+                    with open(metrics_file, 'r') as f:
+                        metrics = json.load(f)
+                        if metrics.get('ros_died', False):
+                            TestLogger.error(f"ROS进程崩溃 (退出码: {metrics.get('launch_exit_code', 'unknown')})")
+                            test_result = "ROS_DIED"
+                        else:
+                            TestLogger.warning("测试超时")
+                            test_result = "TIMEOUT"
+                else:
+                    TestLogger.warning("测试超时")
+                    test_result = "TIMEOUT"
         except Exception as e:
             TestLogger.error(f"测试过程出错: {e}")
             test_result = "ERROR"
 
         # 清理ROS进程
+        TestLogger.info("🔵 开始清理ROS进程...")
         self.cleanup_ros_processes()
+        TestLogger.info("🔵 ROS进程清理完成")
 
         # 生成测试摘要
+        TestLogger.info("🔵 开始生成测试摘要...")
         self.generate_test_summary(shelf, test_dir, test_result)
+        TestLogger.info("🔵 测试摘要生成完成")
 
         TestLogger.test(f"测试 {test_index}/{self.args.num_shelves} 完成: {test_result}")
 
@@ -539,6 +1111,31 @@ class AutomatedTestRunner:
             f.write(f"  - 货架名称 / Shelf Name: {shelf['name']}\n\n")
 
             f.write(f"测试结果 / Test Result: {test_result}\n\n")
+
+            # 如果是ROS崩溃，添加详细信息
+            if test_result == "ROS_DIED":
+                f.write("❌ ROS进程崩溃详情 / ROS Process Crash Details:\n")
+                metrics_file = test_dir / "metrics.json"
+                if metrics_file.exists():
+                    with open(metrics_file, 'r') as mf:
+                        metrics = json.load(mf)
+                        f.write(f"  - 退出码 / Exit Code: {metrics.get('launch_exit_code', 'unknown')}\n")
+                        f.write(f"  - 运行时间 / Runtime: {metrics.get('total_time', 0):.1f}秒\n")
+                        f.write(f"  - 已完成目标 / Goals Reached: {len(metrics.get('goals_reached', []))}/{metrics.get('total_goals', 0)}\n")
+
+                        # 尝试读取launch.log的最后几行
+                        log_file = test_dir / "logs" / "launch.log"
+                        if log_file.exists():
+                            f.write("\n  - Launch日志最后20行 / Last 20 lines of launch.log:\n")
+                            try:
+                                with open(log_file, 'r') as lf:
+                                    lines = lf.readlines()
+                                    last_lines = lines[-20:] if len(lines) > 20 else lines
+                                    for line in last_lines:
+                                        f.write(f"    {line.rstrip()}\n")
+                            except Exception as e:
+                                f.write(f"    [无法读取日志: {e}]\n")
+                f.write("\n")
 
             f.write("测试参数 / Test Parameters:\n")
             f.write(f"  - 超时时间 / Timeout: {self.args.timeout}秒\n")

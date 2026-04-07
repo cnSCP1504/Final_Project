@@ -12,11 +12,11 @@ dr_tightening_node:
   confidence_level: 0.95            # Confidence for ambiguity set
 
 # Tube MPC Parameters
-  tube_radius: 0.5                  # ē: Tube radius (from Tube MPC)
+  tube_radius: 0.4                  # ē: Tube radius (from Tube MPC, reduced by 0.2)
   lipschitz_constant: 1.0           # L_h: Safety function Lipschitz constant
 
 # Safety Function Parameters
-  safety_buffer: 1.0                # Safety buffer for obstacle avoidance
+  safety_buffer: 0.9                # Safety buffer for obstacle avoidance (reduced by 0.2)
   obstacle_influence_radius: 5.0    # Radius for obstacle influence
 
 # DR Tightening Options
