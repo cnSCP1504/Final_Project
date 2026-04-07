@@ -34,6 +34,7 @@
   <arg name="enable_stl" default="false"/>
   <arg name="enable_dr" default="false"/>
   <arg name="enable_terminal_set" default="false"/>
+  <arg name="enable_reference_planner" default="false"/>
 
   <!-- System Configuration -->
   <arg name="enable_visualization" default="true"/>
@@ -86,6 +87,31 @@
       <remap from="cmd_vel" to="/cmd_vel"/>
       <remap from="dr_margins" to="/dr_margins"/>
       <remap from="terminal_set" to="/dr_terminal_set"/>
+    </node>
+  </group>
+
+  <!-- ========== Reference Planner & Regret Analysis ========== -->
+  <group if="$(arg enable_reference_planner)">
+    <node name="safe_regret" pkg="safe_regret" type="safe_regret_node"
+          output="screen" required="false"
+          respawn="false" respawn_delay="5">
+      <!-- Regret Analysis Parameters -->
+      <param name="enable_regret_logging" value="true"/>
+      <param name="regret_log_file" value="/tmp/safe_regret_data.csv"/>
+      <param name="regret_metrics_topic" value="/safe_regret/regret_metrics"/>
+      <param name="reference_trajectory_topic" value="/safe_regret/reference_trajectory"/>
+
+      <!-- Algorithm Configuration -->
+      <param name="no_regret_algorithm" value="omd"/>
+      <param name="tube_radius" value="0.18"/>
+      <param name="L_lipschitz" value="1.0"/>
+      <param name="infeasibility_penalty" value="1000.0"/>
+
+      <!-- Topic Remapping -->
+      <remap from="system_state" to="/safe_regret_mpc/state"/>
+      <remap from="mpc_trajectory" to="/mpc_trajectory"/>
+      <remap from="tracking_error" to="/tube_mpc/tracking_error"/>
+      <remap from="odom" to="/odom"/>
     </node>
   </group>
 

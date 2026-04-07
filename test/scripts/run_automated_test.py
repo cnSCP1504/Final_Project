@@ -75,6 +75,8 @@ class ManuscriptMetricsCollector:
             'reference_cost': [],               # Reference policy cost
             'dynamic_regret': [],               # Dynamic regret values
             'safe_regret': [],                  # Safe regret values
+            'tracking_contribution': [],        # Regret from tracking error
+            'nominal_contribution': [],         # Regret from nominal policy
 
             # 4. Feasibility Data
             'mpc_feasible_count': 0,            # Feasible MPC solves
@@ -168,6 +170,14 @@ class ManuscriptMetricsCollector:
             except Exception as e:
                 TestLogger.warning(f"无法订阅tube_boundaries话题: {e}")
 
+            # 6. Regret Metrics (from safe_regret reference_planner)
+            try:
+                from std_msgs.msg import Float64MultiArray
+                self.subscribers['regret_metrics'] = rospy.Subscriber(
+                    '/safe_regret/regret_metrics', Float64MultiArray, self.regret_metrics_callback)
+            except Exception as e:
+                TestLogger.warning(f"无法订阅regret_metrics话题: {e}")
+
             TestLogger.success("Manuscript Metrics订阅者设置完成")
 
         except Exception as e:
@@ -246,6 +256,23 @@ class ManuscriptMetricsCollector:
         """Tube边界回调（用于高级分析）"""
         # 这里可以保存tube的多边形形状用于可视化
         pass
+
+    def regret_metrics_callback(self, msg):
+        """Regret指标回调 - 接收Float64MultiArray"""
+        # msg.data格式:
+        # [0] safe_regret
+        # [1] dynamic_regret
+        # [2] tracking_contribution
+        # [3] nominal_contribution
+        # [4] horizon_T
+        if len(msg.data) >= 2:
+            self.data['safe_regret'].append(msg.data[0])
+            self.data['dynamic_regret'].append(msg.data[1])
+            if len(msg.data) >= 4:
+                self.data['tracking_contribution'].append(msg.data[2])
+                self.data['nominal_contribution'].append(msg.data[3])
+        else:
+            TestLogger.warning(f"regret_metrics数据长度不足: {len(msg.data)}")
 
     # === 计算指标 ===
 
@@ -501,8 +528,8 @@ class ModelConfig:
         },
         'safe_regret': {
             'name': 'Safe-Regret MPC',
-            'params': 'enable_stl:=true enable_dr:=true',
-            'description': '完整Safe-Regret MPC (STL+DR)'
+            'params': 'enable_stl:=true enable_dr:=true enable_reference_planner:=true',
+            'description': '完整Safe-Regret MPC (STL+DR+Reference)'
         }
     }
 
