@@ -55,7 +55,8 @@ class ManuscriptMetricsCollector:
     7. Calibration accuracy
     """
 
-    def __init__(self):
+    def __init__(self, output_dir=None):
+        self.output_dir = Path(output_dir) if output_dir else None
         self.data = {
             # 1. STL Robustness Data
             'stl_robustness_history': [],      # STL robustness values
@@ -126,10 +127,11 @@ class ManuscriptMetricsCollector:
             # 注意：stl_monitor发布的是Float32，不是Float64！
             try:
                 from std_msgs.msg import Float32
+                # 关键修复：指定queue_size=10，避免消息队列积压
                 self.subscribers['stl_robustness'] = rospy.Subscriber(
-                    '/stl_monitor/robustness', Float32, self.stl_robustness_callback)
+                    '/stl_monitor/robustness', Float32, self.stl_robustness_callback, queue_size=10)
                 self.subscribers['stl_budget'] = rospy.Subscriber(
-                    '/stl_monitor/budget', Float32, self.stl_budget_callback)
+                    '/stl_monitor/budget', Float32, self.stl_budget_callback, queue_size=10)
             except Exception as e:
                 TestLogger.warning(f"无法订阅STL话题: {e}")
 
@@ -138,7 +140,7 @@ class ManuscriptMetricsCollector:
             try:
                 from std_msgs.msg import Float64MultiArray
                 self.subscribers['dr_margins'] = rospy.Subscriber(
-                    '/dr_margins', Float64MultiArray, self.dr_margins_callback)
+                    '/dr_margins', Float64MultiArray, self.dr_margins_callback, queue_size=10)
             except Exception as e:
                 TestLogger.warning(f"无法订阅DR话题: {e}")
 
@@ -147,7 +149,7 @@ class ManuscriptMetricsCollector:
             try:
                 from std_msgs.msg import Float64MultiArray
                 self.subscribers['tracking_error'] = rospy.Subscriber(
-                    '/tube_mpc/tracking_error', Float64MultiArray, self.tracking_error_callback)
+                    '/tube_mpc/tracking_error', Float64MultiArray, self.tracking_error_callback, queue_size=10)
             except Exception as e:
                 TestLogger.warning(f"无法订阅tracking_error话题: {e}")
 
@@ -156,9 +158,9 @@ class ManuscriptMetricsCollector:
             try:
                 from std_msgs.msg import Float64
                 self.subscribers['mpc_solve_time'] = rospy.Subscriber(
-                    '/mpc_metrics/solve_time_ms', Float64, self.mpc_solve_time_callback)
+                    '/mpc_metrics/solve_time_ms', Float64, self.mpc_solve_time_callback, queue_size=10)
                 self.subscribers['mpc_feasibility'] = rospy.Subscriber(
-                    '/mpc_metrics/feasibility_rate', Float64, self.mpc_feasibility_callback)
+                    '/mpc_metrics/feasibility_rate', Float64, self.mpc_feasibility_callback, queue_size=10)
             except Exception as e:
                 TestLogger.warning(f"无法订阅MPC solver话题: {e}")
 
@@ -166,7 +168,7 @@ class ManuscriptMetricsCollector:
             try:
                 from geometry_msgs.msg import PolygonStamped
                 self.subscribers['tube_boundaries'] = rospy.Subscriber(
-                    '/tube_boundaries', PolygonStamped, self.tube_boundaries_callback)
+                    '/tube_boundaries', PolygonStamped, self.tube_boundaries_callback, queue_size=10)
             except Exception as e:
                 TestLogger.warning(f"无法订阅tube_boundaries话题: {e}")
 
@@ -174,7 +176,7 @@ class ManuscriptMetricsCollector:
             try:
                 from std_msgs.msg import Float64MultiArray
                 self.subscribers['regret_metrics'] = rospy.Subscriber(
-                    '/safe_regret/regret_metrics', Float64MultiArray, self.regret_metrics_callback)
+                    '/safe_regret/regret_metrics', Float64MultiArray, self.regret_metrics_callback, queue_size=10)
             except Exception as e:
                 TestLogger.warning(f"无法订阅regret_metrics话题: {e}")
 
@@ -216,7 +218,13 @@ class ManuscriptMetricsCollector:
         """跟踪误差回调 - 接收Float64MultiArray"""
         # msg.data 是一个数组，包含 [error_x, error_y, error_yaw, error_norm]
         if len(msg.data) >= 4:
-            error_norm = msg.data[3]  # 第四个元素是误差范数
+            error_x = msg.data[0]
+            error_y = msg.data[1]
+            error_yaw = msg.data[2]
+            error_norm = msg.data[3]
+
+            # ✅ 修复：添加完整的tracking error数据（不只是norm）
+            self.data['tracking_error_history'].append([error_x, error_y, error_yaw, error_norm])
             self.data['tracking_error_norm_history'].append(error_norm)
 
             # 检查是否违反tube约束（假设tube半径为0.18）
@@ -577,11 +585,12 @@ class GoalMonitor:
     # 移除全局订阅者，改为实例变量（修复第二次测试回调绑定问题）
     # _subscriber = None  # 不再使用全局订阅者
 
-    def __init__(self, goals, goal_radius=0.5, timeout=240, launch_process=None):
+    def __init__(self, goals, goal_radius=0.5, timeout=240, launch_process=None, test_dir=None):
         self.goals = goals
         self.goal_radius = goal_radius
         self.timeout = timeout
         self.launch_process = launch_process  # 添加launch进程引用
+        self.test_dir = test_dir  # 添加测试目录
 
         self.current_goal_index = 0
         self.goals_reached = []
@@ -592,8 +601,8 @@ class GoalMonitor:
         # 实例变量：odom订阅者（每次测试创建新的）
         self.odom_subscriber = None
 
-        # Manuscript Metrics收集器
-        self.manuscript_metrics = ManuscriptMetricsCollector()
+        # Manuscript Metrics收集器（稍后在start_monitoring中设置订阅者）
+        self.manuscript_metrics = ManuscriptMetricsCollector(test_dir) if test_dir else None
 
         # 基础Metrics
         self.metrics = {
@@ -607,12 +616,13 @@ class GoalMonitor:
             'manuscript_metrics': {}  # 添加manuscript指标
         }
 
-    def reset(self, goals, goal_radius=0.5, timeout=240, launch_process=None):
+    def reset(self, goals, goal_radius=0.5, timeout=240, launch_process=None, test_dir=None):
         """重置监控器状态（用于复用实例）"""
         self.goals = goals
         self.goal_radius = goal_radius
         self.timeout = timeout
         self.launch_process = launch_process
+        self.test_dir = test_dir  # 更新测试目录
 
         self.current_goal_index = 0
         self.goals_reached = []
@@ -626,8 +636,14 @@ class GoalMonitor:
             self.odom_subscriber = None
 
         # 重置Manuscript Metrics收集器
-        self.manuscript_metrics.reset()
-        self.manuscript_metrics.shutdown_subscribers()
+        if self.manuscript_metrics:
+            # 🔥 关键修复：先关闭旧订阅者，避免订阅者状态不一致
+            self.manuscript_metrics.shutdown_subscribers()
+            # 然后重置数据
+            self.manuscript_metrics.reset()
+            # 如果test_dir更新了，需要更新收集器的output_dir
+            if test_dir:
+                self.manuscript_metrics.output_dir = Path(test_dir)
 
         # 重置Metrics
         self.metrics = {
@@ -848,12 +864,17 @@ class GoalMonitor:
 
         # 创建新的订阅者（绑定到当前实例的回调）
         print("📡 创建新的odom订阅者...")
-        self.odom_subscriber = rospy.Subscriber('/odom', Odometry, self.odom_callback)
+        # 关键修复：指定queue_size=10，避免消息队列积压导致性能问题
+        self.odom_subscriber = rospy.Subscriber('/odom', Odometry, self.odom_callback, queue_size=10)
         print("✓ 订阅者已创建（绑定到当前实例）")
 
         # 设置Manuscript Metrics订阅者
-        print("📊 设置Manuscript Metrics订阅者...")
-        self.manuscript_metrics.setup_ros_subscribers()
+        if self.manuscript_metrics:
+            print("📊 设置Manuscript Metrics订阅者...")
+            self.manuscript_metrics.setup_ros_subscribers()
+            print("✓ Manuscript Metrics订阅者已设置")
+        else:
+            print("⚠️  Manuscript Metrics收集器未初始化")
 
         self.monitoring = True
         self.start_time = time.time()
@@ -1024,7 +1045,8 @@ class AutomatedTestRunner:
                 goals=goals,
                 goal_radius=0.5,
                 timeout=self.args.timeout,
-                launch_process=self.launch_process
+                launch_process=self.launch_process,
+                test_dir=test_dir  # 传入测试目录
             )
         else:
             # 后续测试：重置现有实例
@@ -1033,7 +1055,8 @@ class AutomatedTestRunner:
                 goals=goals,
                 goal_radius=0.5,
                 timeout=self.args.timeout,
-                launch_process=self.launch_process
+                launch_process=self.launch_process,
+                test_dir=test_dir  # 传入测试目录
             )
 
         # 保存metrics
@@ -1106,6 +1129,19 @@ class AutomatedTestRunner:
 
         # 清理ROS进程
         TestLogger.info("🔵 开始清理ROS进程...")
+
+        # 关键修复：先注销ROS订阅者，避免订阅者累积
+        if self.goal_monitor is not None:
+            TestLogger.info("📡 注销GoalMonitor订阅者...")
+            # 注销odom订阅者
+            if self.goal_monitor.odom_subscriber is not None:
+                self.goal_monitor.odom_subscriber.unregister()
+                self.goal_monitor.odom_subscriber = None
+            # 注销manuscript metrics订阅者
+            if self.goal_monitor.manuscript_metrics is not None:
+                self.goal_monitor.manuscript_metrics.shutdown_subscribers()
+            TestLogger.success("✓ 订阅者已注销")
+
         self.cleanup_ros_processes()
         TestLogger.info("🔵 ROS进程清理完成")
 
