@@ -42,16 +42,37 @@ class ManuscriptMetricsCollector:
             print("⚠️  SafeRegretMetrics message type not available")
             return
 
-        # 订阅metrics话题
+        # 注意：不在__init__中订阅，在setup_ros_subscribers()中订阅
+        print("✓ ManuscriptMetricsCollector initialized")
+        print(f"  Output directory: {self.output_dir}")
+
+    def setup_ros_subscribers(self):
+        """设置ROS订阅者（每次测试都重新创建）"""
+        if SafeRegretMetrics is None:
+            print("⚠️  SafeRegretMetrics message type not available")
+            return
+
+        # 先注销旧的订阅者（如果存在）
+        if self.subscriber is not None:
+            print("📡 注销旧的metrics订阅者...")
+            self.subscriber.unregister()
+            self.subscriber = None
+
+        # 创建新的订阅者
+        print("📡 创建新的metrics订阅者...")
         self.subscriber = rospy.Subscriber(
             '/safe_regret_mpc/metrics',
             SafeRegretMetrics,
             self.metrics_callback
         )
+        print("✓ Metrics订阅者已创建")
 
-        print("✓ ManuscriptMetricsCollector initialized")
-        print(f"  Output directory: {self.output_dir}")
-        print(f"  Subscribed to: /safe_regret_mpc/metrics")
+    def reset(self):
+        """重置收集器状态（每次新测试前调用）"""
+        print("🔄 重置Manuscript Metrics收集器...")
+        self.metrics_data = []
+        self.start_time = None
+        print("✓ 收集器已重置")
 
     def metrics_callback(self, msg):
         """接收metrics消息并存储"""
@@ -262,6 +283,17 @@ Mean Tracking Error & {summary['tracking_metrics']['tracking_error_mean']:.3f} m
               f"σ={summary['tracking_metrics']['tracking_error_std']:.3f}m")
 
         print("\n" + "=" * 80)
+
+    def compute_final_metrics(self):
+        """计算最终指标（别名方法，与compute_manuscript_metrics相同）"""
+        return self.compute_manuscript_metrics()
+
+    def get_raw_data(self):
+        """获取原始数据"""
+        return {
+            'total_snapshots': len(self.metrics_data),
+            'data': self.metrics_data
+        }
 
 
 def main():

@@ -166,6 +166,7 @@ private:
     // Residual collection
     int residual_window_size;
     int residual_dimension;
+    int min_residuals_for_update;  // ✅ 添加：最小残差要求
 
     // Risk parameters
     double total_risk_delta;
@@ -295,7 +296,7 @@ private:
   void logToCSV(const std::vector<double>& margins, const std::vector<double>& risks);
 
   // Constants
-  static constexpr double MIN_RESIDUALS_FOR_UPDATE = 50;  // Minimum samples before computing margins
+  // static constexpr double MIN_RESIDUALS_FOR_UPDATE = 50;  // ❌ 删除：改用params_.min_residuals_for_update
   static constexpr double DEFAULT_LIPSCHITZ = 1.0;
   static constexpr double DEFAULT_TUBE_RADIUS = 0.5;
 };

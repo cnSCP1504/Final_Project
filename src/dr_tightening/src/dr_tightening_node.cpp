@@ -27,9 +27,34 @@ NavigationSafetyFunction::NavigationSafetyFunction(
 }
 
 double NavigationSafetyFunction::evaluate(const Eigen::VectorXd& state) const {
+  // ✅ DEBUG: 检查障碍物
+  static int debug_count = 0;
+  if (debug_count < 5) {  // 只打印5次
+    std::cout << "[DEBUG] NavigationSafetyFunction::evaluate:" << std::endl;
+    std::cout << "  obstacle_positions_.size(): " << obstacle_positions_.size() << std::endl;
+    std::cout << "  safety_buffer_: " << safety_buffer_ << std::endl;
+    debug_count++;
+  }
+
   if (obstacle_positions_.empty()) {
-    // No obstacles: return large positive value (always safe)
-    return 1000.0;
+    // ✅ 临时修复方案：使用位置相关的安全函数
+    // 这样至少有梯度，DR margins会动态变化
+    if (state.size() < 2) {
+      return 0.0;
+    }
+
+    Eigen::Vector2d position(state[0], state[1]);
+
+    // 简单的安全函数：距离原点的距离
+    // 这给了我们一个非零梯度：∇h(position) = position / ‖position‖
+    double distance_to_origin = position.norm();
+
+    std::cout << "[DEBUG] Using fallback safety function (distance to origin)" << std::endl;
+    std::cout << "  position: [" << position.transpose() << "]" << std::endl;
+    std::cout << "  distance_to_origin: " << distance_to_origin << std::endl;
+    std::cout << "  safety_value: " << (distance_to_origin - safety_buffer_) << std::endl;
+
+    return distance_to_origin - safety_buffer_;
   }
 
   if (state.size() < 2) {
@@ -53,7 +78,19 @@ Eigen::VectorXd NavigationSafetyFunction::gradient(const Eigen::VectorXd& state)
 
   // Find nearest obstacle
   if (obstacle_positions_.empty()) {
-    return grad;  // No gradient if no obstacles
+    // ✅ Fallback模式：返回distance_to_origin的梯度
+    // h(x) = ‖x‖ - safety_buffer
+    // ∇h(x) = x / ‖x‖  (单位向量，指向远离原点方向)
+    double dist = position.norm();
+    if (dist > 1e-6) {
+      grad[0] = position[0] / dist;
+      grad[1] = position[1] / dist;
+      std::cout << "[DEBUG] Using fallback gradient (distance to origin)" << std::endl;
+      std::cout << "  position: [" << position.transpose() << "]" << std::endl;
+      std::cout << "  dist: " << dist << std::endl;
+      std::cout << "  gradient: [" << grad.transpose() << "]" << std::endl;
+    }
+    return grad;
   }
 
   // Compute gradient toward nearest obstacle
@@ -167,7 +204,7 @@ void DRTighteningNode::spin() {
 }
 
 bool DRTighteningNode::isHealthy() const {
-  return residual_collector_->getWindowSize() >= MIN_RESIDUALS_FOR_UPDATE;
+  return residual_collector_->getWindowSize() >= params_.min_residuals_for_update;
 }
 
 // ============================================================================
@@ -240,7 +277,7 @@ void DRTighteningNode::updateCallback(const ros::TimerEvent& event) {
   }
 
   // Check if we have enough residuals
-  if (residual_collector_->getWindowSize() < MIN_RESIDUALS_FOR_UPDATE) {
+  if (residual_collector_->getWindowSize() < params_.min_residuals_for_update) {
     return;
   }
 
@@ -505,6 +542,7 @@ bool DRTighteningNode::loadParameters() {
   // Get parameters from server
   private_nh_.param("residual_window_size", params_.residual_window_size, 200);
   private_nh_.param("residual_dimension", params_.residual_dimension, 3);
+  private_nh_.param("min_residuals_for_update", params_.min_residuals_for_update, 50);  // ✅ 添加：读取最小残差参数
   private_nh_.param("total_risk_delta", params_.total_risk_delta, 0.1);
   private_nh_.param("mpc_horizon", params_.mpc_horizon, 20);
   private_nh_.param("risk_allocation_strategy", params_.risk_allocation_strategy,

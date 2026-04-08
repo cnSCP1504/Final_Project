@@ -61,9 +61,25 @@ double TighteningComputer::computeChebyshevMargin(
   // Component 4: Cantelli factor (κ_{δ_t} = sqrt((1-δ_t)/δ_t))
   double cantelli_factor = computeCantelliFactor(delta_t);
 
+  // ✅ DEBUG OUTPUT
+  std::cout << "[DEBUG] computeChebyshevMargin:" << std::endl;
+  std::cout << "  time_step: " << time_step << std::endl;
+  std::cout << "  delta_t: " << delta_t << std::endl;
+  std::cout << "  residual count: " << residual_collector.getWindowSize() << std::endl;
+  std::cout << "  mean: [" << mean.transpose() << "]" << std::endl;
+  std::cout << "  gradient: [" << gradient.transpose() << "]" << std::endl;
+  std::cout << "  tube_offset (L_h*ē): " << tube_offset << std::endl;
+  std::cout << "  mean_along_sensitivity (gradient·mean): " << mean_along_sensitivity << std::endl;
+  std::cout << "  std_along_sensitivity: " << std_along_sensitivity << std::endl;
+  std::cout << "  cantelli_factor: " << cantelli_factor << std::endl;
+  std::cout << "  cantelli_factor * std_along_sensitivity: " << (cantelli_factor * std_along_sensitivity) << std::endl;
+
   // Total deterministic margin
   double total_margin = tube_offset + mean_along_sensitivity +
                        cantelli_factor * std_along_sensitivity;
+
+  std::cout << "  TOTAL_MARGIN: " << total_margin << std::endl;
+  std::cout << std::endl;
 
   return total_margin;
 }

@@ -339,13 +339,13 @@ void SafeRegretMPCNode::drMarginsRawCallback(
     }
 
     // Tube compensation
-    dr_msg.tube_radius = 0.5;
+    dr_msg.tube_radius = 0.6;  // Increased by 0.1 for safety
     dr_msg.tube_offset = 0.1;
     dr_msg.tube_compensation = 0.1;
 
     // Confidence
     dr_msg.confidence_level = 0.9;
-    dr_msg.safety_margin = 1.0;
+    dr_msg.safety_margin = 1.1;  // Increased by 0.1 for safety
 
     // Computational info
     dr_msg.computation_time = 1.0;

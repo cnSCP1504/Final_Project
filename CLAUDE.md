@@ -1122,6 +1122,59 @@ def check_launch_process(self):
 - Add feasibility restoration phase
 - Optimize Ipopt parameters for faster solving
 
+### 🚨 CRITICAL: STL Implementation Gap (Discovered 2026-04-07)
+**Status**: **SEVERE** - Current implementation does NOT match manuscript requirements
+
+**Problem**:
+- STL robustness values are constant (only two values: -6.67 and -15.49)
+- This is because current implementation uses simplified formula: `robustness = 0.5 - distance`
+- Manuscript requires belief-space STL with smooth surrogates
+
+**Manuscript Requirements**:
+```latex
+E_{x∼β_k}[ρ^soft(φ; x_{k:k+N})]  % Belief-space expectation
+smax_τ(z) := τ·log(∑_i e^{z_i/τ})     % Log-sum-exp smooth surrogate
+smin_τ(z) := -smax_τ(-z)
+```
+
+**Current Implementation** (stl_monitor_node.py):
+```python
+self.use_belief_space = rospy.get_param('~use_belief_space', False)  # ❌ Disabled!
+self.robustness = self.reachability_threshold - distance  # ❌ Simplified!
+```
+
+**Root Cause**:
+1. Launch file sets `use_belief_space=false`
+2. Complete C++ implementation exists but is NOT compiled:
+   - `BeliefSpaceEvaluator.cpp` - Belief space evaluation
+   - `SmoothRobustness.cpp` - Log-sum-exp implementation
+   - `STLParser.cpp` - STL formula parsing
+3. CMakeLists.txt does not compile these C++ files
+4. Only Python simplified version is running
+
+**Impact**:
+- 🔴 **Manuscript alignment**: Overstates actual implementation (claims 85%, but STL is wrong)
+- 🔴 **Paper validity**: Experimental results do NOT support manuscript claims
+- 🔴 **System performance**: Not utilizing uncertainty information
+- 🔴 **Regret analysis**: Bounds depend on correct STL robustness
+
+**Required Fixes**:
+1. **Modify CMakeLists.txt** to compile C++ STL implementation
+2. **Modify launch file** to set `use_belief_space=true`
+3. **Rebuild and test** to verify continuous robustness values
+4. **Re-run experiments** with correct implementation
+
+**Expected Behavior After Fix**:
+- STL robustness should vary continuously (not constant)
+- Should reflect belief uncertainty (covariance)
+- Should use smooth surrogate (log-sum-exp)
+- Should match manuscript requirements
+
+**See Also**:
+- `test/scripts/STL_IMPLEMENTATION_GAP_ANALYSIS.md` - Detailed analysis
+- `test/scripts/STL_TWO_VALUES_FINAL_ANALYSIS.md` - Why only two values
+- Git commit 2b088cf - Documentation of this issue
+
 ### Local Trajectory Display Issue
 **Status**: Under investigation (as of 2026-04-01)
 
@@ -1660,78 +1713,97 @@ rm -rf build/safe_regret_mpc devel/lib/safe_regret_mpc
 catkin_make --only-pkg-with-deps safe_regret_mpc
 source devel/setup.bash
 ```
-❯ 自动测试脚本在第第二次测试的时候开始无法正确接收到达目标点导致第二次测试      
-  卡住无法进入到第三次测试，查看是什么问题导致的                               
+将该问题整理进claude.md，整理好后查看现在的dr                                 
+  tightennig等算法部分和manuscript中的要求有多少区别                        
                                                                                 
-● 我来帮你检查自动测试脚本的问题。让我先查看测试脚本：                          
+● 好的，我先更新CLAUDE.md，然后检查DR tightening等算法与manuscript的差距。      
                                                                                 
 ● Searched for 1 pattern, read 1 file (ctrl+o to expand)                        
-                                       
-● 我来分析一下这个问题。从代码来看，关键问题在于 rospy.init_node()              
-  只能调用一次，但测试脚本在每次测试时都会创建新的 GoalMonitor 并调用
-  start_monitoring()，这会导致第二次测试时ROS节点无法正确工作。                 
-                                                                                
-  让我查看一下具体的调用流程：
-                                                                                
-● Searched for 1 pattern, read 1 file (ctrl+o to expand)          
-                                     
-● 找到问题了！根本原因是 rospy.init_node() 
-  只能在整个程序中调用一次，但每次测试都会创建新的 GoalMonitor 并调用
-  start_monitoring()，导致第二次测试时节点无法正确初始化，订阅者失效。
-                                                                                
-  让我修复这个问题：
-                                                                                
-● Read 1 file (ctrl+o to expand)                                  
-                                       
-● Update(test/scripts/run_automated_test.py)
-  ⎿  Added 4 lines                          
-      165  class GoalMonitor:                                            
-      166      """目标到达监控器"""                                             
-      167                                                                       
-      168 +    # 类变量：跟踪ROS节点是否已初始化（避免重复初始化）              
-      169 +    _node_initialized = False                                        
-      170 +    _subscriber = None                                               
-      171 +                                                                     
-      172      def __init__(self, goals, goal_radius=0.5, timeout=240,
-           launch_process=None):
-      173          self.goals = goals
-      174          self.goal_radius = goal_radius
+                              
+● Update(CLAUDE.md)                                                             
+  ⎿  Added 53 lines                                               
+      1122  - Add feasibility restoration phase                                 
+      1123  - Optimize Ipopt parameters for faster solving                      
+      1124                                                                      
+      1125 +### 🚨 CRITICAL: STL Implementation Gap (Discovered                 
+           +2026-04-07)                                                         
+      1126 +**Status**: **SEVERE** - Current implementation does NOT     
+           +match manuscript requirements                                
+      1127 +                                                             
+      1128 +**Problem**:                                                 
+      1129 +- STL robustness values are constant (only two values: -6.67 
+           + and -15.49)                                                 
+      1130 +- This is because current implementation uses simplified     
+           +formula: `robustness = 0.5 - distance`                       
+      1131 +- Manuscript requires belief-space STL with smooth           
+           +surrogates                                                   
+      1132 +                                                             
+      1133 +**Manuscript Requirements**:                                 
+      1134 +```latex                                                     
+      1135 +E_{x∼β_k}[ρ^soft(φ; x_{k:k+N})]  % Belief-space expectation  
+      1136 +smax_τ(z) := τ·log(∑_i e^{z_i/τ})     % Log-sum-exp smooth   
+           +surrogate                                                    
+      1137 +smin_τ(z) := -smax_τ(-z)                                     
+      1138 +```                                                          
+      1139 +                                                             
+      1140 +**Current Implementation** (stl_monitor_node.py):            
+      1141 +```python                                                    
+      1142 +self.use_belief_space = rospy.get_param('~use_belief_space', 
+           + False)  # ❌ Disabled!                                      
+      1143 +self.robustness = self.reachability_threshold - distance  #  
+           +❌ Simplified!                                               
+      1144 +```                                                          
+      1145 +                                                             
+      1146 +**Root Cause**:                                              
+      1147 +1. Launch file sets `use_belief_space=false`                 
+      1148 +2. Complete C++ implementation exists but is NOT compiled:   
+      1149 +   - `BeliefSpaceEvaluator.cpp` - Belief space evaluation    
+      1150 +   - `SmoothRobustness.cpp` - Log-sum-exp implementation     
+      1151 +   - `STLParser.cpp` - STL formula parsing                   
+      1152 +3. CMakeLists.txt does not compile these C++ files           
+      1153 +4. Only Python simplified version is running                 
+      1154 +                                                             
+      1155 +**Impact**:                                                  
+      1156 +- 🔴 **Manuscript alignment**: Overstates actual             
+           +implementation (claims 85%, but STL is wrong)                
+      1157 +- 🔴 **Paper validity**: Experimental results do NOT support 
+           + manuscript claims                                           
+      1158 +- 🔴 **System performance**: Not utilizing uncertainty       
+           +information                                                  
+      1159 +- 🔴 **Regret analysis**: Bounds depend on correct STL       
+           +robustness                                                   
+      1160 +                                                             
+      1161 +**Required Fixes**:                                          
+      1162 +1. **Modify CMakeLists.txt** to compile C++ STL              
+           +implementation                                               
+      1163 +2. **Modify launch file** to set `use_belief_space=true`     
+      1164 +3. **Rebuild and test** to verify continuous robustness      
+           +values                                                       
+      1165 +4. **Re-run experiments** with correct implementation        
+      1166 +                                                             
+      1167 +**Expected Behavior After Fix**:                             
+      1168 +- STL robustness should vary continuously (not constant)     
+      1169 +- Should reflect belief uncertainty (covariance)             
+      1170 +- Should use smooth surrogate (log-sum-exp)                  
+      1171 +- Should match manuscript requirements                       
+      1172 +                                                             
+      1173 +**See Also**:                                                
+      1174 +- `test/scripts/STL_IMPLEMENTATION_GAP_ANALYSIS.md` -        
+           +Detailed analysis                                            
+      1175 +- `test/scripts/STL_TWO_VALUES_FINAL_ANALYSIS.md` - Why only 
+           + two values                                                  
+      1176 +- Git commit 2b088cf - Documentation of this issue           
+      1177 +                                                             
+      1178  ### Local Trajectory Display Issue
+      1179  **Status**: Under investigation (as of 2026-04-01)
+      1180   
 
-● Update(test/scripts/run_automated_test.py)
-  ⎿  Added 16 lines, removed 2 lines
-      366              print(f"Launch进程PID:                            
-           {self.launch_process.pid}")                                   
-      367          print("=" * 70)                                              
-      368                                                                
-      369 -        rospy.init_node('goal_monitor', anonymous=True)              
-      370 -        rospy.Subscriber('/odom', Odometry,                   
-          -self.odom_callback)                                           
-      369 +        # 关键修复：只在第一次调用时初始化ROS节点             
-      370 +        if not GoalMonitor._node_initialized:                 
-      371 +            print("📡 初始化ROS节点...")                      
-      372 +            rospy.init_node('goal_monitor', anonymous=True)   
-      373 +            GoalMonitor._node_initialized = True              
-      374 +            print("✓ ROS节点已初始化")                        
-      375 +        else:                                                 
-      376 +            print("✓ ROS节点已存在，跳过初始化")              
-      377   
-      378 +        # 每次都创建新的订阅者（确保回调正常工作）            
-      379 +        if GoalMonitor._subscriber is None:                   
-      380 +            print("📡 创建odom订阅者...")                     
-      381 +            GoalMonitor._subscriber =                         
-          +rospy.Subscriber('/odom', Odometry, self.odom_callback)       
-      382 +            print("✓ 订阅者已创建")                           
-      383 +        else:                                                 
-      384 +            print("✓ 订阅者已存在，重用现有订阅者")           
-      385 +                                                              
-      386          self.monitoring = True
-      387          self.start_time = time.time()
-      388          self.metrics['test_start_time'] =
-           datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+● 现在检查DR tightening等算法与manuscript的差距：
 
-● 现在还需要确保每次测试开始时重置目标索引：     
-
+● Searched for 2 patterns, read 2 files (ctrl+o to expand)                      
+                                                  
+● 现在创建详细的DR对比分析：                                                    
+                                                                  
 ● Read 1 file (ctrl+o to expand)                                                
-  ⎿  API Error: 429 {"error":{"code":"1308","message":"已达到 5 
-     小时的使用上限。您的限额将在 2026-04-06 21:58:35                           
-     重置。"},"request_id":"202604061823215defaf4d2d5842e3"}  上次进度
+  ⎿  Interrupted · What should Claude do instead?  
+  上次进度

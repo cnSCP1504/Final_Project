@@ -136,6 +136,18 @@ Eigen::VectorXd SafetyLinearization::centralDifference(
   int dim = state.size();
   Eigen::VectorXd gradient(dim);
 
+  // ✅ DEBUG: 打印前几次梯度计算
+  static int debug_count = 0;
+  bool should_debug = (debug_count < 3);
+  debug_count++;
+
+  if (should_debug) {
+    std::cout << "[DEBUG] centralDifference:" << std::endl;
+    std::cout << "  state: [" << state.transpose() << "]" << std::endl;
+    std::cout << "  dim: " << dim << std::endl;
+    std::cout << "  epsilon: " << epsilon << std::endl;
+  }
+
   Eigen::VectorXd state_plus = state;
   Eigen::VectorXd state_minus = state;
 
@@ -148,9 +160,23 @@ Eigen::VectorXd SafetyLinearization::centralDifference(
 
     gradient[i] = (f_plus - f_minus) / (2.0 * epsilon);
 
+    if (should_debug) {
+      std::cout << "  dim[" << i << "]:" << std::endl;
+      std::cout << "    state_plus[" << i << "]: " << state_plus[i] << std::endl;
+      std::cout << "    state_minus[" << i << "]: " << state_minus[i] << std::endl;
+      std::cout << "    f_plus: " << f_plus << std::endl;
+      std::cout << "    f_minus: " << f_minus << std::endl;
+      std::cout << "    gradient[" << i << "]: " << gradient[i] << std::endl;
+    }
+
     // Reset
     state_plus[i] = state[i];
     state_minus[i] = state[i];
+  }
+
+  if (should_debug) {
+    std::cout << "  gradient: [" << gradient.transpose() << "]" << std::endl;
+    std::cout << std::endl;
   }
 
   return gradient;

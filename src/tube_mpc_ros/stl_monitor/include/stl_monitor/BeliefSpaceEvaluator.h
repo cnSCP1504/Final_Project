@@ -108,7 +108,7 @@ private:
     double alpha_;
     double beta_;
     double kappa_;
-    double lambda_;
+    mutable double lambda_;  // mutable: computed in const functions
 
     // Dynamics model
     DynamicsFunc dynamics_model_;

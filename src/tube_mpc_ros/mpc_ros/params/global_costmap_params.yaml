@@ -13,6 +13,6 @@ global_costmap:
 
 
     inflation_layer:
-        inflation_radius: 0.45  # 增加到45cm，提高安全性（原25cm→35cm→45cm）
+        inflation_radius: 0.55  # 增加到55cm，提高安全性（原25cm→35cm→45cm→55cm）
         cost_scaling_factor: 2.0
 

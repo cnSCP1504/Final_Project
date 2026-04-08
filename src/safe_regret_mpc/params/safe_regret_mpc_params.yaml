@@ -66,7 +66,7 @@ dr:
 
   # Tightening
   lipschitz_const: 1.0       # Lipschitz constant L_h
-  tube_compensation: 0.1     # Tube compensation η_ℰ
+  tube_compensation: 0.2     # Tube compensation η_ℰ (increased by 0.1 for safety)
 
 # ========== Terminal Set Parameters ==========
 terminal_set:

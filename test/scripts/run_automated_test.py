@@ -1317,8 +1317,8 @@ def main():
                        help='模型类型 (默认: tube_mpc)')
 
     parser.add_argument('--shelves', dest='num_shelves',
-                       type=int, default=5,
-                       help='测试货架数量 (默认: 5, 范围: 1-5)')
+                       type=int, default=10,
+                       help='测试货架数量 (默认: 10, 范围: 1-10)')
 
     parser.add_argument('--timeout',
                        type=int, default=240,
@@ -1355,8 +1355,8 @@ def main():
     args = parser.parse_args()
 
     # 验证货架数量
-    if args.num_shelves < 1 or args.num_shelves > 5:
-        print("错误: 货架数量必须在1-5之间")
+    if args.num_shelves < 1 or args.num_shelves > 10:
+        print("错误: 货架数量必须在1-10之间")
         sys.exit(1)
 
     # 设置参数

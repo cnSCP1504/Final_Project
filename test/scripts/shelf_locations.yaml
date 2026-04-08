@@ -51,3 +51,45 @@ shelves:
     y: -7.0
     yaw: 0.0
     description: "南侧最东侧的取货点"
+
+  # ==================== 北侧取货点 (Y=+7) ====================
+
+  # 北侧取货点1 - 对应shelf_01的Y镜像位置
+  - id: "shelf_06"
+    name: "货架06 - 北侧西"
+    x: -6.5
+    y: 7.0
+    yaw: 0.0
+    description: "北侧西侧的取货点（对应shelf_01的Y镜像）"
+
+  # 北侧取货点2 - 对应shelf_02的Y镜像位置
+  - id: "shelf_07"
+    name: "货架07 - 北侧中"
+    x: -3.5
+    y: 7.0
+    yaw: 0.0
+    description: "北侧中部的取货点（对应shelf_02的Y镜像）"
+
+  # 北侧取货点3 - 对应shelf_03的Y镜像位置
+  - id: "shelf_08"
+    name: "货架08 - 北侧中"
+    x: 0.0
+    y: 7.0
+    yaw: 0.0
+    description: "北侧中部的取货点（对应shelf_03的Y镜像）"
+
+  # 北侧取货点4 - 对应shelf_04的Y镜像位置
+  - id: "shelf_09"
+    name: "货架09 - 北侧东"
+    x: 3.5
+    y: 7.0
+    yaw: 0.0
+    description: "北侧东侧的取货点（对应shelf_04的Y镜像）"
+
+  # 北侧取货点5 - 对应shelf_05的Y镜像位置
+  - id: "shelf_10"
+    name: "货架10 - 北侧最东"
+    x: 6.5
+    y: 7.0
+    yaw: 0.0
+    description: "北侧最东侧的取货点（对应shelf_05的Y镜像）"
