@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <launch>
-  <!-- STL Monitor Node -->
-  <node name="stl_monitor" pkg="stl_monitor" type="stl_monitor_node.py" output="screen">
+  <!-- ✅ STL Monitor Node (C++ version with Path Tracking support) -->
+  <node name="stl_monitor" pkg="stl_monitor" type="stl_monitor_node_cpp" output="screen">
     <!-- STL Formula Configuration -->
-    <param name="stl_formula_type" value="reachability"/>
+    <param name="stl_formula_type" value="path_tracking"/>
     <param name="time_horizon" value="20.0"/>
 
     <!-- Robustness Parameters -->
@@ -12,7 +12,7 @@
     <param name="safety_threshold" value="0.3"/>
 
     <!-- Belief Space -->
-    <param name="use_belief_space" value="false"/>
+    <param name="use_belief_space" value="false"/>  <!-- ✅ Disabled for path-tracking: use actual robot position -->
     <param name="num_particles" value="100"/>
     <param name="prediction_horizon" value="2.0"/>
     <param name="prediction_dt" value="0.1"/>

@@ -68,9 +68,52 @@ double STLConstraintIntegrator::computeBeliefRobustness(
     // For now, use simple distance-based metric
     if (trajectory.empty()) return baseline_;
 
-    // Simple robustness: negative distance to goal
-    double distance = trajectory[0].norm();
-    return baseline_ - distance;
+    // ✅ CRITICAL FIX: Calculate distance from robot to path (not from origin to first point!)
+    // belief_mean: current robot position [x, y, theta, ...]
+    // trajectory: reference trajectory [ [x0, y0, theta0, ...], [x1, y1, theta1, ...], ... ]
+
+    double robot_x = belief_mean(0);
+    double robot_y = belief_mean(1);
+
+    // Find minimum distance from robot to any segment in the trajectory
+    double min_dist = std::numeric_limits<double>::max();
+
+    for (size_t i = 0; i < trajectory.size() - 1; ++i) {
+        double x1 = trajectory[i](0);
+        double y1 = trajectory[i](1);
+        double x2 = trajectory[i+1](0);
+        double y2 = trajectory[i+1](1);
+
+        // Distance from point to line segment
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+        double len_sq = dx*dx + dy*dy;
+
+        double dist;
+        if (len_sq < 1e-9) {
+            // Degenerate segment: distance to point
+            dist = std::sqrt((robot_x - x1)*(robot_x - x1) + (robot_y - y1)*(robot_y - y1));
+        } else {
+            // Projection parameter t (clamped to [0, 1])
+            double t = std::max(0.0, std::min(1.0,
+                ((robot_x - x1) * dx + (robot_y - y1) * dy) / len_sq));
+
+            // Closest point on segment
+            double nearest_x = x1 + t * dx;
+            double nearest_y = y1 + t * dy;
+
+            // Distance to closest point
+            dist = std::sqrt((robot_x - nearest_x)*(robot_x - nearest_x) +
+                             (robot_y - nearest_y)*(robot_y - nearest_y));
+        }
+
+        if (dist < min_dist) {
+            min_dist = dist;
+        }
+    }
+
+    // Robustness: threshold - distance
+    return baseline_ - min_dist;
 }
 
 std::vector<VectorXd> STLConstraintIntegrator::computeRobustnessGradient(

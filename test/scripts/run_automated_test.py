@@ -41,6 +41,14 @@ import math
 import numpy as np
 from collections import defaultdict
 
+# 添加数据处理和绘图功能
+import matplotlib
+matplotlib.use('Agg')  # 使用非交互式后端
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from typing import Dict, List, Tuple
+from scipy import stats
+
 class ManuscriptMetricsCollector:
     """
     Manuscript性能指标收集器
@@ -1150,6 +1158,17 @@ class AutomatedTestRunner:
         self.generate_test_summary(shelf, test_dir, test_result)
         TestLogger.info("🔵 测试摘要生成完成")
 
+        # 🔥 新增：处理单个测试的manuscript指标并生成图表
+        # 即使测试超时或失败，也尝试处理数据（只要manuscript数据存在）
+        TestLogger.info("📊 开始处理manuscript指标...")
+        try:
+            self.process_single_test_metrics(test_dir, shelf)
+        except Exception as e:
+            TestLogger.warning(f"  Manuscript指标处理失败: {e}")
+            import traceback
+            TestLogger.warning(f"  错误详情: {traceback.format_exc()}")
+            TestLogger.warning(f"  继续执行后续测试...")
+
         TestLogger.test(f"测试 {test_index}/{self.args.num_shelves} 完成: {test_result}")
 
         # 等待系统完全关闭
@@ -1251,6 +1270,855 @@ class AutomatedTestRunner:
         # 打印报告内容
         with open(report_file, 'r') as f:
             print(f.read())
+
+        # 🔥 新增：聚合所有测试的manuscript指标并生成综合图表
+        TestLogger.info("📊 开始聚合所有测试的manuscript指标...")
+        try:
+            self.aggregate_all_tests_metrics()
+        except Exception as e:
+            TestLogger.error(f"  聚合manuscript指标失败: {e}")
+            TestLogger.error(f"  请检查测试数据是否完整")
+
+    def process_single_test_metrics(self, test_dir: Path, shelf: Dict):
+        """
+        处理单个测试的manuscript指标并生成图表
+
+        Args:
+            test_dir: 测试目录路径
+            shelf: 货架信息字典
+        """
+        TestLogger.info(f"📊 处理测试 {shelf['id']} 的manuscript指标...")
+
+        # 读取metrics.json
+        metrics_file = test_dir / "metrics.json"
+        if not metrics_file.exists():
+            TestLogger.warning(f"  未找到metrics.json，跳过数据处理")
+            return
+
+        with open(metrics_file, 'r') as f:
+            metrics = json.load(f)
+
+        # 检查是否有manuscript指标
+        if 'manuscript_metrics' not in metrics:
+            TestLogger.warning(f"  未找到manuscript_metrics，跳过数据处理")
+            return
+
+        manuscript_metrics = metrics['manuscript_metrics']
+
+        # 创建图表输出目录
+        figures_dir = test_dir / "figures"
+        figures_dir.mkdir(exist_ok=True)
+
+        # 生成单测试指标报告
+        self._generate_single_test_report(manuscript_metrics, test_dir, shelf)
+
+        # 生成单测试图表
+        self._generate_single_test_figures(manuscript_metrics, figures_dir, shelf)
+
+        TestLogger.success(f"  ✓ 测试 {shelf['id']} 数据处理完成")
+
+    def _generate_single_test_report(self, metrics: Dict, test_dir: Path, shelf: Dict):
+        """生成单个测试的指标报告（处理扁平数据格式）"""
+        report_file = test_dir / "manuscript_metrics_report.txt"
+
+        with open(report_file, 'w') as f:
+            f.write("=" * 70 + "\n")
+            f.write(f"Manuscript性能指标报告 - 测试 {shelf['id']}: {shelf['name']}\n")
+            f.write("=" * 70 + "\n\n")
+
+            f.write(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"货架位置: ({shelf['x']}, {shelf['y']})\n\n")
+
+            # 辅助函数：安全获取值
+            def get_value(data, key, default=0, is_float=False):
+                """从嵌套或扁平数据中获取值"""
+                if key in data:
+                    val = data[key]
+                    if isinstance(val, dict):
+                        return val.get(default, 0) if isinstance(default, str) else val.get(default, 0)
+                    else:
+                        return float(val) if is_float else val
+                return default
+
+            # 1. Satisfaction Probability（扁平格式）
+            if 'satisfaction_probability' in metrics:
+                sat = metrics['satisfaction_probability']
+                f.write("1. STL Satisfaction Probability\n")
+                if isinstance(sat, dict):
+                    f.write(f"   满足步数: {sat.get('satisfied_steps', 0)}/{sat.get('total_steps', 0)}\n")
+                    f.write(f"   最终鲁棒性: {sat.get('final_robustness', 0):.4f}\n")
+                    f.write(f"   平均鲁棒性: {sat.get('mean_robustness', 0):.4f}\n")
+                else:
+                    # 扁平格式，直接是概率值
+                    f.write(f"   满足概率: {float(sat):.4f}\n")
+                f.write("\n")
+
+            # 2. Empirical Risk（扁平格式：observed_violation_rate）
+            f.write("2. Empirical Risk (安全约束违反)\n")
+            if 'tube_violation_count' in metrics:
+                f.write(f"   违反次数: {metrics['tube_violation_count']}\n")
+            if 'total_steps' in metrics:
+                f.write(f"   总步数: {metrics['total_steps']}\n")
+            if 'observed_violation_rate' in metrics:
+                f.write(f"   观察风险: {metrics['observed_violation_rate']:.4f}\n")
+            f.write(f"   目标风险 δ: 0.05\n\n")
+
+            # 3. Regret（扁平格式：avg_dynamic_regret）
+            if 'avg_dynamic_regret' in metrics:
+                f.write("3. Dynamic Regret\n")
+                f.write(f"   归一化遗憾: {metrics['avg_dynamic_regret']:.4f}\n\n")
+
+            # 4. Feasibility（扁平格式：feasibility_rate）
+            if 'feasibility_rate' in metrics:
+                f.write("4. MPC Feasibility\n")
+                rate = metrics['feasibility_rate']
+                if 'total_mpc_solves' in metrics:
+                    total = metrics['total_mpc_solves']
+                    feasible = int(rate * total)
+                    f.write(f"   可行求解: {feasible}/{total}\n")
+                f.write(f"   可行率: {float(rate)*100:.2f}%\n\n")
+
+            # 5. Computation（扁平格式：median_solve_time, mean_solve_time等）
+            f.write("5. Computation Time\n")
+            if 'median_solve_time' in metrics:
+                f.write(f"   中位数: {metrics['median_solve_time']:.2f} ms\n")
+            if 'mean_solve_time' in metrics:
+                f.write(f"   平均值: {metrics['mean_solve_time']:.2f} ms\n")
+            if 'p90_solve_time' in metrics:
+                f.write(f"   P90: {metrics['p90_solve_time']:.2f} ms\n")
+            if 'mpc_failure_count' in metrics:
+                f.write(f"   失败次数: {metrics['mpc_failure_count']}\n")
+            f.write("\n")
+
+            # 6. Tracking Error（扁平格式：mean_tracking_error等）
+            f.write("6. Tracking Error\n")
+            if 'mean_tracking_error' in metrics:
+                f.write(f"   平均误差: {metrics['mean_tracking_error']*100:.2f} cm\n")
+            if 'max_tracking_error' in metrics:
+                f.write(f"   最大误差: {metrics['max_tracking_error']*100:.2f} cm\n")
+            if 'std_tracking_error' in metrics:
+                f.write(f"   标准差: {metrics['std_tracking_error']*100:.2f} cm\n")
+            if 'tube_occupancy_rate' in metrics:
+                f.write(f"   管占用量: {metrics['tube_occupancy_rate']*100:.2f}%\n")
+            f.write("\n")
+
+            # 7. Calibration（扁平格式：calibration_error）
+            f.write("7. Calibration Accuracy\n")
+            f.write(f"   目标风险 δ: 0.05\n")
+            if 'observed_violation_rate' in metrics:
+                f.write(f"   观察风险: {metrics['observed_violation_rate']:.4f}\n")
+            if 'calibration_error' in metrics:
+                f.write(f"   校准误差: {metrics['calibration_error']:.4f}\n")
+                is_well = metrics['calibration_error'] < 0.01
+                f.write(f"   是否校准良好: {'是' if is_well else '否'}\n")
+            f.write("\n")
+
+            f.write("=" * 70 + "\n")
+
+        TestLogger.success(f"  ✓ 指标报告已生成: {report_file}")
+
+    def _generate_single_test_figures(self, metrics: Dict, figures_dir: Path, shelf: Dict):
+        """生成单个测试的图表"""
+        # 设置matplotlib参数
+        plt.rcParams['font.size'] = 10
+        plt.rcParams['font.family'] = 'serif'
+        plt.rcParams['figure.dpi'] = 100
+        plt.rcParams['savefig.dpi'] = 300
+        plt.rcParams['savefig.bbox'] = 'tight'
+
+        # 色盲友好配色
+        COLORS = {
+            'blue': '#2E86AB',
+            'red': '#C73E1D',
+            'green': '#6A994E',
+            'gray': '#808080'
+        }
+
+        # 创建综合仪表板（2x2子图）
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        fig.suptitle(f'Test {shelf["id"]}: {shelf["name"]} - Performance Dashboard',
+                    fontsize=14, fontweight='bold')
+
+        # 1. STL Robustness History (左上)
+        if 'stl_robustness_history' in metrics:
+            ax = axes[0, 0]
+            history = metrics['stl_robustness_history']
+            ax.plot(history, color=COLORS['blue'], linewidth=1.5)
+            ax.axhline(y=0, color=COLORS['green'], linestyle='--', linewidth=2, label='Satisfaction threshold')
+            ax.set_xlabel('Time step', fontweight='bold')
+            ax.set_ylabel('STL Robustness', fontweight='bold')
+            ax.set_title('(a) STL Robustness Over Time', fontweight='bold')
+            ax.grid(alpha=0.3)
+            ax.legend()
+
+        # 2. Tracking Error (右上)
+        if 'tracking_error_norm_history' in metrics:
+            ax = axes[0, 1]
+            errors = metrics['tracking_error_norm_history']
+            ax.plot(np.array(errors) * 100, color=COLORS['blue'], linewidth=1.5)  # 转为cm
+            tube_radius_cm = metrics.get('tube_radius', 0.18) * 100
+            ax.axhline(y=tube_radius_cm, color=COLORS['red'], linestyle='--',
+                      linewidth=2, label=f'Tube radius ({tube_radius_cm:.1f} cm)')
+            ax.set_xlabel('Time step', fontweight='bold')
+            ax.set_ylabel('Tracking Error (cm)', fontweight='bold')
+            ax.set_title('(b) Tracking Error Over Time', fontweight='bold')
+            ax.grid(alpha=0.3)
+            ax.legend()
+
+        # 3. MPC Solve Time (左下)
+        if 'mpc_solve_times' in metrics:
+            ax = axes[1, 0]
+            solve_times = metrics['mpc_solve_times']
+            ax.plot(solve_times, color=COLORS['blue'], linewidth=1.5, alpha=0.7)
+            ax.axhline(y=8, color=COLORS['green'], linestyle='--',
+                      linewidth=2, label='Real-time budget (8 ms)')
+            ax.set_xlabel('Solve number', fontweight='bold')
+            ax.set_ylabel('Solve Time (ms)', fontweight='bold')
+            ax.set_title('(c) MPC Computation Time', fontweight='bold')
+            ax.grid(alpha=0.3)
+            ax.legend()
+
+        # 4. Satisfaction Probability (右下)
+        if 'satisfaction_probability' in metrics:
+            ax = axes[1, 1]
+            sat = metrics['satisfaction_probability']
+
+            # 处理两种数据格式：嵌套字典或扁平值
+            if isinstance(sat, dict):
+                # 嵌套格式
+                satisfied = sat.get('satisfied_steps', 0)
+                total = sat.get('total_steps', 1)
+            else:
+                # 扁平格式：sat是概率值(0.0-1.0)，需要从total_steps计算
+                total = metrics.get('total_steps', metrics.get('stl_total_steps', 1))
+                satisfied = int(sat * total) if total > 0 else 0
+
+            rate = (satisfied / total * 100) if total > 0 else 0
+
+            colors_pie = [COLORS['green'], COLORS['red']]
+            sizes = [rate, 100 - rate]
+            labels = [f'Satisfied\n({rate:.1f}%)', f'Violated\n({100-rate:.1f}%)']
+
+            ax.pie(sizes, labels=labels, colors=colors_pie, autopct='',
+                  startangle=90, textprops={'fontsize': 10, 'fontweight': 'bold'})
+            ax.set_title(f'(d) STL Satisfaction Rate\n({satisfied}/{total} steps)',
+                        fontweight='bold')
+
+        plt.tight_layout()
+        dashboard_file = figures_dir / "performance_dashboard.png"
+        plt.savefig(dashboard_file, dpi=300)
+        plt.savefig(figures_dir / "performance_dashboard.pdf")
+        plt.close()
+
+        TestLogger.success(f"  ✓ 性能仪表板已生成: {dashboard_file}")
+
+    def aggregate_all_tests_metrics(self):
+        """
+        聚合所有测试的manuscript指标并生成综合报告和图表
+        """
+        TestLogger.info("=" * 70)
+        TestLogger.info("📊 聚合所有测试的manuscript指标...")
+        TestLogger.info("=" * 70)
+
+        test_results_dir = self.results_manager.test_results_dir
+
+        # 收集所有测试的metrics
+        all_tests_data = []
+
+        for test_dir in sorted(test_results_dir.glob("test_*")):
+            metrics_file = test_dir / "metrics.json"
+            if metrics_file.exists():
+                with open(metrics_file, 'r') as f:
+                    test_data = json.load(f)
+                    if 'manuscript_metrics' in test_data:
+                        all_tests_data.append(test_data['manuscript_metrics'])
+                        TestLogger.info(f"  ✓ 加载测试数据: {test_dir.name}")
+
+        if not all_tests_data:
+            TestLogger.warning("  未找到任何manuscript指标数据")
+            return
+
+        TestLogger.info(f"  共加载 {len(all_tests_data)} 个测试的数据")
+
+        # 计算聚合指标
+        aggregated_metrics = self._compute_aggregated_metrics(all_tests_data)
+
+        # 保存聚合指标
+        aggregated_file = test_results_dir / "aggregated_manuscript_metrics.json"
+        with open(aggregated_file, 'w') as f:
+            json.dump(aggregated_metrics, f, indent=2)
+
+        TestLogger.success(f"  ✓ 聚合指标已保存: {aggregated_file}")
+
+        # 生成聚合报告
+        self._generate_aggregated_report(aggregated_metrics, test_results_dir)
+
+        # 生成聚合图表
+        self._generate_aggregated_figures(aggregated_metrics, test_results_dir)
+
+        TestLogger.success("📊 所有测试数据处理完成！")
+
+    def _compute_aggregated_metrics(self, all_tests_data: List[Dict]) -> Dict:
+        """计算聚合的manuscript指标（处理扁平数据结构）"""
+        aggregated = {
+            'metadata': {
+                'total_tests': len(all_tests_data),
+                'computation_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'model': self.args.model
+            }
+        }
+
+        # 1. Satisfaction Probability（扁平格式：直接是float值）
+        all_satisfied = []
+        for test in all_tests_data:
+            if 'satisfaction_probability' in test:
+                sat = test['satisfaction_probability']
+                # 处理扁平格式（直接值）或嵌套格式（字典）
+                if isinstance(sat, dict):
+                    satisfied = sat.get('satisfied_steps', 0)
+                    total = sat.get('total_steps', 1)
+                    if total > 0:
+                        all_satisfied.append(satisfied / total)
+                else:
+                    # 扁平格式，直接是概率值
+                    all_satisfied.append(float(sat))
+
+        if all_satisfied:
+            aggregated['satisfaction_probability'] = {
+                'mean': float(np.mean(all_satisfied)),
+                'std': float(np.std(all_satisfied)),
+                'min': float(np.min(all_satisfied)),
+                'max': float(np.max(all_satisfied)),
+                'median': float(np.median(all_satisfied))
+            }
+
+        # 2. Empirical Risk（扁平格式）
+        all_risks = []
+        total_violations = 0
+        total_steps = 0
+
+        for test in all_tests_data:
+            if 'observed_violation_rate' in test:
+                # 扁平格式
+                risk = test['observed_violation_rate']
+                all_risks.append(float(risk))
+                if 'tube_violation_count' in test:
+                    total_violations += test['tube_violation_count']
+            elif 'empirical_risk' in test:
+                # 嵌套格式
+                risk = test['empirical_risk']
+                if isinstance(risk, dict):
+                    observed_risk = risk.get('observed_risk', 0)
+                    all_risks.append(float(observed_risk))
+                    total_violations += risk.get('violation_count', 0)
+                    total_steps += risk.get('total_steps', 0)
+                else:
+                    all_risks.append(float(risk))
+
+            if 'total_steps' in test:
+                total_steps += test['total_steps']
+
+        aggregated_risk = total_violations / total_steps if total_steps > 0 else 0
+
+        if all_risks:
+            aggregated['empirical_risk'] = {
+                'mean': float(np.mean(all_risks)),
+                'std': float(np.std(all_risks)),
+                'min': float(np.min(all_risks)),
+                'max': float(np.max(all_risks)),
+                'aggregated_risk': float(aggregated_risk),
+                'total_violations': total_violations,
+                'total_steps': total_steps
+            }
+
+        # 3. Regret（扁平格式：avg_dynamic_regret）
+        all_regrets = []
+        for test in all_tests_data:
+            if 'avg_dynamic_regret' in test:
+                all_regrets.append(float(test['avg_dynamic_regret']))
+            elif 'regret' in test:
+                regret = test['regret']
+                if isinstance(regret, dict):
+                    all_regrets.append(regret.get('normalized_regret', 0))
+                else:
+                    all_regrets.append(float(regret))
+
+        if all_regrets:
+            aggregated['regret'] = {
+                'mean': float(np.mean(all_regrets)),
+                'std': float(np.std(all_regrets)),
+                'min': float(np.min(all_regrets)),
+                'max': float(np.max(all_regrets)),
+                'median': float(np.median(all_regrets))
+            }
+
+        # 4. Feasibility（扁平格式：feasibility_rate）
+        all_feasibility = []
+        total_feasible = 0
+        total_solves = 0
+
+        for test in all_tests_data:
+            if 'feasibility_rate' in test:
+                # 扁平格式
+                rate = test['feasibility_rate']
+                all_feasibility.append(float(rate))
+                if 'total_mpc_solves' in test:
+                    total_solves += test['total_mpc_solves']
+                    total_feasible += int(rate * test['total_mpc_solves'])
+            elif 'feasibility' in test:
+                # 嵌套格式
+                feas = test['feasibility']
+                if isinstance(feas, dict):
+                    rate = feas.get('feasibility_rate', 0)
+                    all_feasibility.append(float(rate))
+                    total_feasible += feas.get('feasible_count', 0)
+                    total_solves += feas.get('total_solves', 0)
+                else:
+                    all_feasibility.append(float(feas))
+
+        aggregated_feasibility = total_feasible / total_solves if total_solves > 0 else 0
+
+        if all_feasibility:
+            aggregated['feasibility'] = {
+                'mean': float(np.mean(all_feasibility)),
+                'std': float(np.std(all_feasibility)),
+                'min': float(np.min(all_feasibility)),
+                'max': float(np.max(all_feasibility)),
+                'aggregated_rate': float(aggregated_feasibility),
+                'total_feasible': total_feasible,
+                'total_solves': total_solves
+            }
+
+        # 5. Computation（扁平格式：median_solve_time, mean_solve_time等）
+        all_medians = []
+        all_means = []
+        total_failures = 0
+
+        for test in all_tests_data:
+            if 'median_solve_time' in test:
+                # 扁平格式
+                all_medians.append(float(test['median_solve_time']))
+                if 'mean_solve_time' in test:
+                    all_means.append(float(test['mean_solve_time']))
+                if 'mpc_failure_count' in test:
+                    total_failures += test['mpc_failure_count']
+            elif 'computation' in test:
+                # 嵌套格式
+                comp = test['computation']
+                if isinstance(comp, dict):
+                    all_medians.append(comp.get('median_ms', 0))
+                    all_means.append(comp.get('mean_ms', 0))
+                    total_failures += comp.get('failure_count', 0)
+
+        if all_medians:
+            aggregated['computation'] = {
+                'median_of_medians': float(np.median(all_medians)),
+                'mean_median': float(np.mean(all_medians)),
+                'std_median': float(np.std(all_medians)),
+                'min_median': float(np.min(all_medians)),
+                'max_median': float(np.max(all_medians)),
+                'mean_of_means': float(np.mean(all_means)) if all_means else 0,
+                'total_failures': total_failures
+            }
+
+        # 6. Tracking Error（扁平格式：mean_tracking_error等）
+        all_mean_errors = []
+        all_max_errors = []
+        all_occupancy = []
+
+        for test in all_tests_data:
+            if 'mean_tracking_error' in test:
+                # 扁平格式
+                all_mean_errors.append(float(test['mean_tracking_error']))
+                if 'max_tracking_error' in test:
+                    all_max_errors.append(float(test['max_tracking_error']))
+                if 'tube_occupancy_rate' in test:
+                    all_occupancy.append(float(test['tube_occupancy_rate']))
+            elif 'tracking' in test:
+                # 嵌套格式
+                track = test['tracking']
+                if isinstance(track, dict):
+                    all_mean_errors.append(track.get('mean_error_m', 0))
+                    all_max_errors.append(track.get('max_error_m', 0))
+                    all_occupancy.append(track.get('occupancy_rate', 0))
+
+        if all_mean_errors:
+            aggregated['tracking'] = {
+                'mean_error_mean': float(np.mean(all_mean_errors)),
+                'mean_error_std': float(np.std(all_mean_errors)),
+                'max_error_mean': float(np.mean(all_max_errors)) if all_max_errors else 0,
+                'occupancy_mean': float(np.mean(all_occupancy)),
+                'occupancy_std': float(np.std(all_occupancy))
+            }
+
+        # 7. Calibration（扁平格式：calibration_error）
+        all_calibration_errors = []
+
+        for test in all_tests_data:
+            if 'calibration_error' in test:
+                # 扁平格式
+                all_calibration_errors.append(float(test['calibration_error']))
+            elif 'calibration' in test:
+                # 嵌套格式
+                calib = test['calibration']
+                if isinstance(calib, dict):
+                    all_calibration_errors.append(calib.get('calibration_error', 0))
+                else:
+                    all_calibration_errors.append(float(calib))
+
+        if all_calibration_errors:
+            aggregated['calibration'] = {
+                'mean_error': float(np.mean(all_calibration_errors)),
+                'std_error': float(np.std(all_calibration_errors)),
+                'min_error': float(np.min(all_calibration_errors)),
+                'max_error': float(np.max(all_calibration_errors)),
+                'well_calibrated_count': sum(1 for e in all_calibration_errors if e < 0.01),
+                'total_tests': len(all_calibration_errors)
+            }
+
+        return aggregated
+
+    def _generate_aggregated_report(self, metrics: Dict, output_dir: Path):
+        """生成聚合指标报告"""
+        report_file = output_dir / "aggregated_manuscript_metrics_report.txt"
+
+        with open(report_file, 'w', encoding='utf-8') as f:
+            f.write("=" * 70 + "\n")
+            f.write("聚合Manuscript性能指标报告\n")
+            f.write("Aggregated Manuscript Performance Metrics Report\n")
+            f.write("=" * 70 + "\n\n")
+
+            f.write(f"生成时间: {metrics['metadata']['computation_time']}\n")
+            f.write(f"模型: {metrics['metadata']['model']}\n")
+            f.write(f"测试数量: {metrics['metadata']['total_tests']}\n\n")
+
+            # 1. Satisfaction Probability
+            if 'satisfaction_probability' in metrics:
+                sat = metrics['satisfaction_probability']
+                f.write("1. STL Satisfaction Probability (聚合统计)\n")
+                f.write(f"   均值: {sat['mean']*100:.2f}%\n")
+                f.write(f"   标准差: {sat['std']*100:.2f}%\n")
+                f.write(f"   中位数: {sat['median']*100:.2f}%\n")
+                f.write(f"   范围: [{sat['min']*100:.2f}%, {sat['max']*100:.2f}%]\n\n")
+
+            # 2. Empirical Risk
+            if 'empirical_risk' in metrics:
+                risk = metrics['empirical_risk']
+                f.write("2. Empirical Risk (聚合统计)\n")
+                f.write(f"   聚合风险: {risk['aggregated_risk']:.4f}\n")
+                f.write(f"   均值: {risk['mean']:.4f} ± {risk['std']:.4f}\n")
+                f.write(f"   总违反次数: {risk['total_violations']}\n")
+                f.write(f"   总步数: {risk['total_steps']}\n\n")
+
+            # 3. Regret
+            if 'regret' in metrics:
+                regret = metrics['regret']
+                f.write("3. Dynamic Regret (聚合统计)\n")
+                f.write(f"   均值: {regret['mean']:.4f} ± {regret['std']:.4f}\n")
+                f.write(f"   中位数: {regret['median']:.4f}\n")
+                f.write(f"   范围: [{regret['min']:.4f}, {regret['max']:.4f}]\n\n")
+
+            # 4. Feasibility
+            if 'feasibility' in metrics:
+                feas = metrics['feasibility']
+                f.write("4. MPC Feasibility (聚合统计)\n")
+                f.write(f"   聚合可行率: {feas['aggregated_rate']*100:.2f}%\n")
+                f.write(f"   均值: {feas['mean']*100:.2f}% ± {feas['std']*100:.2f}%\n")
+                f.write(f"   总可行求解: {feas['total_feasible']}/{feas['total_solves']}\n\n")
+
+            # 5. Computation
+            if 'computation' in metrics:
+                comp = metrics['computation']
+                f.write("5. Computation Time (聚合统计)\n")
+                f.write(f"   中位数的中位数: {comp['median_of_medians']:.2f} ms\n")
+                f.write(f"   均值: {comp['mean_median']:.2f} ± {comp['std_median']:.2f} ms\n")
+                f.write(f"   范围: [{comp['min_median']:.2f}, {comp['max_median']:.2f}] ms\n")
+                f.write(f"   总失败次数: {comp['total_failures']}\n\n")
+
+            # 6. Tracking Error
+            if 'tracking' in metrics:
+                track = metrics['tracking']
+                f.write("6. Tracking Error (聚合统计)\n")
+                f.write(f"   平均误差均值: {track['mean_error_mean']*100:.2f} ± {track['mean_error_std']*100:.2f} cm\n")
+                if 'max_error_mean' in track:
+                    f.write(f"   最大误差均值: {track['max_error_mean']*100:.2f} cm\n")
+                f.write(f"   管占用量: {track['occupancy_mean']*100:.2f}% ± {track['occupancy_std']*100:.2f}%\n\n")
+
+            # 7. Calibration
+            if 'calibration' in metrics:
+                calib = metrics['calibration']
+                f.write("7. Calibration Accuracy (聚合统计)\n")
+                f.write(f"   校准误差均值: {calib['mean_error']:.4f} ± {calib['std_error']:.4f}\n")
+                f.write(f"   校准良好测试数: {calib['well_calibrated_count']}/{calib['total_tests']}\n\n")
+
+            f.write("=" * 70 + "\n")
+
+        TestLogger.success(f"  ✓ 聚合报告已生成: {report_file}")
+
+    def _generate_aggregated_figures(self, metrics: Dict, output_dir: Path):
+        """生成聚合图表"""
+        # 创建图表输出目录
+        figures_dir = output_dir / "aggregated_figures"
+        figures_dir.mkdir(exist_ok=True)
+
+        # 设置matplotlib参数
+        plt.rcParams['font.size'] = 10
+        plt.rcParams['font.family'] = 'serif'
+        plt.rcParams['axes.labelsize'] = 12
+        plt.rcParams['axes.labelweight'] = 'bold'
+        plt.rcParams['axes.titlesize'] = 14
+        plt.rcParams['axes.titleweight'] = 'bold'
+        plt.rcParams['figure.dpi'] = 100
+        plt.rcParams['savefig.dpi'] = 300
+        plt.rcParams['savefig.bbox'] = 'tight'
+
+        # 色盲友好配色
+        COLORS = {
+            'blue': '#2E86AB',
+            'red': '#C73E1D',
+            'green': '#6A994E',
+            'gray': '#808080'
+        }
+
+        # 创建综合仪表板 (3x3 子图)
+        fig = plt.figure(figsize=(16, 12))
+        gs = fig.add_gridspec(3, 3, hspace=0.35, wspace=0.35)
+
+        fig.suptitle(f'Aggregated Performance Metrics - {self.args.model}\n({metrics["metadata"]["total_tests"]} tests)',
+                    fontsize=16, fontweight='bold')
+
+        # 1. Satisfaction Probability (左上)
+        if 'satisfaction_probability' in metrics:
+            ax = fig.add_subplot(gs[0, 0])
+            sat = metrics['satisfaction_probability']
+
+            data = [sat['mean'] * 100]
+            yerr = [[sat['mean'] - sat['min']], [sat['max'] - sat['mean']]]
+
+            ax.bar(['SR-MPC'], data, yerr=yerr, capsize=5,
+                  color=COLORS['blue'], alpha=0.7, error_kw={'linewidth': 2})
+            ax.text(0, sat['mean'] * 100, f'{sat["mean"]*100:.1f}%',
+                   ha='center', va='bottom', fontsize=12, fontweight='bold')
+            ax.set_ylabel('Satisfaction Rate (%)', fontweight='bold')
+            ax.set_title('(a) STL Satisfaction', fontweight='bold')
+            ax.set_ylim([0, 105])
+            ax.grid(axis='y', alpha=0.3)
+
+        # 2. Empirical Risk (中上)
+        if 'empirical_risk' in metrics:
+            ax = fig.add_subplot(gs[0, 1])
+            risk = metrics['empirical_risk']
+
+            observed = risk['aggregated_risk']
+            target = 0.05
+            color = COLORS['blue'] if abs(observed - target) < 0.02 else COLORS['red']
+
+            ax.bar(['SR-MPC'], [observed], color=color, alpha=0.7)
+            ax.axhline(y=target, color=COLORS['green'], linestyle='--', linewidth=2,
+                      label=f'Target $\\delta = {target:.2f}$')
+            ax.text(0, observed, f'{observed:.3f}', ha='center', va='bottom' if observed < target else 'top',
+                   fontsize=12, fontweight='bold')
+            ax.set_ylabel('Violation Rate', fontweight='bold')
+            ax.set_title('(b) Empirical Risk', fontweight='bold')
+            ax.set_ylim([0, max(observed * 1.5, target * 2)])
+            ax.legend(loc='upper right')
+            ax.grid(axis='y', alpha=0.3)
+
+        # 3. Feasibility (右上)
+        if 'feasibility' in metrics:
+            ax = fig.add_subplot(gs[0, 2])
+            feas = metrics['feasibility']
+            rate = feas['aggregated_rate'] * 100
+            target_rate = 99.5
+
+            color = COLORS['blue'] if rate >= target_rate else COLORS['red']
+            ax.bar(['SR-MPC'], [rate], color=color, alpha=0.7)
+            ax.axhline(y=target_rate, color=COLORS['green'], linestyle='--', linewidth=2,
+                      label=f'Target ({target_rate:.1f}%)')
+            ax.text(0, rate, f'{rate:.1f}%', ha='center', va='bottom',
+                   fontsize=12, fontweight='bold')
+            ax.set_ylabel('Feasibility (%)', fontweight='bold')
+            ax.set_title('(c) Recursive Feasibility', fontweight='bold')
+            ax.set_ylim([rate * 0.95, 100.5])
+            ax.legend(loc='lower right')
+            ax.grid(axis='y', alpha=0.3)
+
+        # 4. Computation (左中)
+        if 'computation' in metrics:
+            ax = fig.add_subplot(gs[1, 0])
+            comp = metrics['computation']
+
+            stats_names = ['Median', 'Mean', 'Min', 'Max']
+            stats_values = [comp['median_of_medians'], comp['mean_median'],
+                           comp['min_median'], comp['max_median']]
+
+            x_pos = np.arange(len(stats_names))
+            ax.bar(x_pos, stats_values, color=COLORS['blue'], alpha=0.7)
+            ax.axhline(y=8, color=COLORS['green'], linestyle='--', linewidth=2,
+                      label='Real-time (8 ms)')
+
+            for i, val in enumerate(stats_values):
+                ax.text(i, val, f'{val:.1f}', ha='center', va='bottom',
+                       fontsize=9, fontweight='bold')
+
+            ax.set_xticks(x_pos)
+            ax.set_xticklabels(stats_names)
+            ax.set_ylabel('Time (ms)', fontweight='bold')
+            ax.set_title('(d) Computation Time', fontweight='bold')
+            ax.legend(loc='upper left')
+            ax.grid(axis='y', alpha=0.3)
+
+        # 5. Tracking Error (中中)
+        if 'tracking' in metrics:
+            ax = fig.add_subplot(gs[1, 1])
+            track = metrics['tracking']
+
+            stats_names = ['Mean', 'Max']
+            stats_values = [track['mean_error_mean'] * 100, track.get('max_error_mean', track['mean_error_mean']) * 100]
+            # 修复：yerr应该是一个1D数组，每个值对应一个bar
+            # Mean error有std，Max error没有std（设为0）
+            yerr = [track['mean_error_std'] * 100, 0]
+
+            x_pos = np.arange(len(stats_names))
+            ax.bar(x_pos, stats_values, yerr=yerr, capsize=5,
+                  color=COLORS['blue'], alpha=0.7, error_kw={'linewidth': 2})
+
+            tube_radius_cm = 18
+            ax.axhline(y=tube_radius_cm, color=COLORS['red'], linestyle='--',
+                      linewidth=2, label=f'Tube radius ({tube_radius_cm} cm)')
+
+            for i, val in enumerate(stats_values):
+                ax.text(i, val, f'{val:.2f}', ha='center', va='bottom',
+                       fontsize=9, fontweight='bold')
+
+            ax.set_xticks(x_pos)
+            ax.set_xticklabels(stats_names)
+            ax.set_ylabel('Error (cm)', fontweight='bold')
+            ax.set_title('(e) Tracking Error', fontweight='bold')
+            ax.legend(loc='upper left')
+            ax.grid(axis='y', alpha=0.3)
+
+        # 6. Tube Occupancy (中右)
+        if 'tracking' in metrics:
+            ax = fig.add_subplot(gs[1, 2])
+            track = metrics['tracking']
+            occupancy = track['occupancy_mean'] * 100
+
+            colors_pie = [COLORS['green'], COLORS['red']]
+            sizes = [occupancy, 100 - occupancy]
+            labels = [f'In tube\n({occupancy:.1f}%)', f'Out of tube\n({100-occupancy:.1f}%)']
+
+            ax.pie(sizes, labels=labels, colors=colors_pie, autopct='',
+                  startangle=90, textprops={'fontsize': 10, 'fontweight': 'bold'})
+            ax.set_title(f'(f) Tube Occupancy\n(Mean ± {track["occupancy_std"]*100:.1f}%)',
+                        fontweight='bold')
+
+        # 7. Regret (左下)
+        if 'regret' in metrics:
+            ax = fig.add_subplot(gs[2, 0])
+            regret = metrics['regret']
+
+            stats_names = ['Mean', 'Median']
+            stats_values = [regret['mean'], regret['median']]
+
+            x_pos = np.arange(len(stats_names))
+            ax.bar(x_pos, stats_values, color=COLORS['blue'], alpha=0.7)
+
+            for i, val in enumerate(stats_values):
+                ax.text(i, val, f'{val:.4f}', ha='center', va='bottom',
+                       fontsize=9, fontweight='bold')
+
+            ax.set_xticks(x_pos)
+            ax.set_xticklabels(stats_names)
+            ax.set_ylabel('Normalized Regret ($R_T/T$)', fontweight='bold')
+            ax.set_title('(g) Dynamic Regret', fontweight='bold')
+            ax.grid(axis='y', alpha=0.3)
+
+        # 8. Calibration (中下)
+        if 'calibration' in metrics:
+            ax = fig.add_subplot(gs[2, 1])
+            calib = metrics['calibration']
+
+            mean_error = calib['mean_error']
+            target_delta = 0.05
+            color = COLORS['blue'] if mean_error < 0.01 else COLORS['red']
+
+            ax.scatter(0, mean_error, s=200, c=color, alpha=0.7,
+                      edgecolors='black', linewidths=2)
+            ax.axhline(y=0, color=COLORS['green'], linestyle='--', linewidth=2,
+                      label='Perfect calibration')
+            ax.fill_between([-0.5, 0.5], -0.01, 0.01,
+                          color=COLORS['green'], alpha=0.1, label='±1% tolerance')
+            ax.text(0, mean_error, f'{mean_error:.3f}', ha='center',
+                   va='bottom' if mean_error < 0 else 'top',
+                   fontsize=10, fontweight='bold',
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            ax.set_xlim([-0.5, 0.5])
+            ax.set_xticks([0])
+            ax.set_xticklabels(['SR-MPC'])
+            ax.set_ylabel('Calibration Error', fontweight='bold')
+            ax.set_title('(h) Calibration Accuracy', fontweight='bold')
+            ax.set_ylim([0, max(mean_error * 1.5, 0.02)])
+            ax.legend(loc='upper right')
+            ax.grid(axis='y', alpha=0.3)
+
+        # 9. Summary Table (右下)
+        ax = fig.add_subplot(gs[2, 2])
+        ax.axis('off')
+
+        # 创建摘要表格
+        summary_data = [['Metric', 'Mean Value', 'Target']]
+
+        if 'satisfaction_probability' in metrics:
+            sat = metrics['satisfaction_probability']
+            summary_data.append(['Satisfaction', f'{sat["mean"]*100:.1f}%', 'N/A'])
+
+        if 'empirical_risk' in metrics:
+            risk = metrics['empirical_risk']
+            summary_data.append(['Risk', f'{risk["aggregated_risk"]:.3f}', '0.05'])
+
+        if 'feasibility' in metrics:
+            feas = metrics['feasibility']
+            summary_data.append(['Feasibility', f'{feas["aggregated_rate"]*100:.1f}%', '99.5%'])
+
+        if 'computation' in metrics:
+            comp = metrics['computation']
+            summary_data.append(['Solve Time', f'{comp["median_of_medians"]:.1f} ms', '<8 ms'])
+
+        if 'tracking' in metrics:
+            track = metrics['tracking']
+            summary_data.append(['Tracking Error', f'{track["mean_error_mean"]*100:.2f} cm', '<18 cm'])
+
+        if 'calibration' in metrics:
+            calib = metrics['calibration']
+            summary_data.append(['Calibration Error', f'{calib["mean_error"]:.3f}', '<0.01'])
+
+        table = ax.table(cellText=summary_data, cellLoc='center',
+                        loc='center', colWidths=[0.4, 0.3, 0.3])
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1, 2)
+
+        # 设置表头样式
+        for i in range(3):
+            table[(0, i)].set_facecolor('#4472C4')
+            table[(0, i)].set_text_props(weight='bold', color='white')
+
+        # 交替行颜色
+        for i in range(1, len(summary_data)):
+            for j in range(3):
+                if i % 2 == 0:
+                    table[(i, j)].set_facecolor('#E7E6E6')
+
+        ax.set_title('(i) Performance Summary', fontweight='bold', pad=20)
+
+        # 保存图表
+        plt.savefig(figures_dir / "aggregated_performance_dashboard.png", dpi=300)
+        plt.savefig(figures_dir / "aggregated_performance_dashboard.pdf")
+        plt.close()
+
+        TestLogger.success(f"  ✓ 聚合性能仪表板已生成")
+        TestLogger.success(f"    图表目录: {figures_dir}")
 
     def run_tests(self):
         """运行所有测试"""

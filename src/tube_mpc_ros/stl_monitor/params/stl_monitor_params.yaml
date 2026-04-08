@@ -3,9 +3,9 @@
 
 # STL Formula Specification
 stl_formula:
-  # Formula type: "reachability", "safety", "sequence"
-  type: "reachability"
-  description: "Eventually reach goal within time horizon"
+  # Formula type: "path_tracking", "reachability", "safety", "sequence"
+  type: "path_tracking"
+  description: "Always stay close to reference path (G_[0,T](distance(robot, path) ≤ threshold))"
 
   # Temporal bounds
   time_horizon: 20.0  # seconds
