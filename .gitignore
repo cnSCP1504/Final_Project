@@ -35,3 +35,5 @@ logs/
 *.a
 *.so
 *.o
+# GitHub Token文件（不应提交）
+test/scripts/.github_token

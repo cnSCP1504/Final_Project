@@ -1651,6 +1651,25 @@ s.t. dynamics constraints
 - User explicitly requests "push" or "推送" or "上传"
 - User wants to sync commits to remote repository
 
+### GitHub Authentication
+
+**Repository**: `https://github.com/cnSCP1504/Final_Project.git`
+
+**Token Storage**: For security, Personal Access Token is stored in `test/scripts/.github_token` (gitignored file)
+
+**Usage**:
+```bash
+# Token is automatically loaded from .github_token for push operations
+# See test/scripts/github_push.sh for details
+
+# Manual push with token:
+# Read token from secure file and use it
+TOKEN=$(cat test/scripts/.github_token 2>/dev/null)
+git push https://${TOKEN}@github.com/cnSCP1504/Final_Project.git test
+```
+
+**Note**: Token is not committed to repository for security reasons.
+
 ### Recent Commit History
 ```
 b5cc076 fix: RViz配置调整 (2026-04-01)
