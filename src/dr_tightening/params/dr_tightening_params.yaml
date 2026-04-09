@@ -16,7 +16,7 @@ dr_tightening_node:
   lipschitz_constant: 1.0           # L_h: Safety function Lipschitz constant
 
 # Safety Function Parameters
-  safety_buffer: 1.0                # Safety buffer for obstacle avoidance (increased by 0.1)
+  safety_buffer: 0.2                # ✅ 方案B: Costmap归一化值的安全缓冲 (原值: 1.0)
   obstacle_influence_radius: 5.0    # Radius for obstacle influence
 
 # DR Tightening Options

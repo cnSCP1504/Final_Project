@@ -204,9 +204,20 @@ private:
   std::ofstream log_file_;
 
   // Helper functions
+  /**
+   * @brief Compute stage cost ℓ(x,u) = ‖x - x_ref‖² + ‖u‖²
+   *
+   * ✅ FIXED: Now uses tracking error (distance to reference) instead of distance to origin
+   *
+   * @param state Current state x
+   * @param input Current input u
+   * @param reference_state Reference state x_ref (optional, defaults to zero)
+   * @return Stage cost
+   */
   double computeStageCost(
     const Eigen::VectorXd& state,
-    const Eigen::VectorXd& input) const;
+    const Eigen::VectorXd& input,
+    const Eigen::VectorXd& reference_state = Eigen::VectorXd()) const;
 
   /**
    * @brief Compute tracking contribution (Lemma 4.6)

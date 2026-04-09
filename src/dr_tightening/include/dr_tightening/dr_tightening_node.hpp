@@ -28,6 +28,7 @@
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <nav_msgs/Odometry.h>
+#include <nav_msgs/OccupancyGrid.h>  // ✅ 方案B: Costmap支持
 #include <fstream>
 
 #include "dr_tightening/ResidualCollector.hpp"
@@ -96,9 +97,31 @@ public:
    */
   size_t getObstacleCount() const;
 
+  // ✅ 方案B: Costmap支持
+  /**
+   * @brief Set costmap data (from DR node callback)
+   * @param costmap Pointer to costmap message
+   */
+  void setCostmap(const nav_msgs::OccupancyGrid::ConstPtr& costmap);
+
+  /**
+   * @brief Get costmap value at world position
+   * @param x World X coordinate
+   * @param y World Y coordinate
+   * @return Costmap value (0=free, 254=obstacle)
+   */
+  double getCostmapValue(double x, double y) const;
+
+  /**
+   * @brief Check if costmap is available
+   * @return True if costmap data exists
+   */
+  bool hasCostmap() const;
+
 private:
   std::vector<Eigen::Vector2d> obstacle_positions_;
   double safety_buffer_;
+  nav_msgs::OccupancyGrid::ConstPtr costmap_;
 
   /**
    * @brief Find nearest obstacle distance
@@ -152,6 +175,7 @@ private:
   ros::Subscriber sub_mpc_trajectory_;
   ros::Subscriber sub_odom_;
   ros::Subscriber sub_cmd_vel_;
+  ros::Subscriber sub_costmap_;  // ✅ 方案B: Costmap订阅
 
   // Publishers
   ros::Publisher pub_margins_;
@@ -247,6 +271,7 @@ private:
   void mpcTrajectoryCallback(const nav_msgs::Path::ConstPtr& msg);
   void odomCallback(const nav_msgs::Odometry::ConstPtr& msg);
   void cmdVelCallback(const geometry_msgs::Twist::ConstPtr& msg);
+  void costmapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg);  // ✅ 方案B: Costmap回调
 
   // Timer callback
   void updateCallback(const ros::TimerEvent& event);

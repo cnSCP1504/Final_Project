@@ -13,6 +13,7 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <nav_msgs/OccupancyGrid.h>  // ✅ 方案B: Costmap支持
 
 namespace dr_tightening {
 
@@ -27,73 +28,99 @@ NavigationSafetyFunction::NavigationSafetyFunction(
 }
 
 double NavigationSafetyFunction::evaluate(const Eigen::VectorXd& state) const {
-  // ✅ DEBUG: 检查障碍物
-  static int debug_count = 0;
-  if (debug_count < 5) {  // 只打印5次
-    std::cout << "[DEBUG] NavigationSafetyFunction::evaluate:" << std::endl;
-    std::cout << "  obstacle_positions_.size(): " << obstacle_positions_.size() << std::endl;
-    std::cout << "  safety_buffer_: " << safety_buffer_ << std::endl;
-    debug_count++;
-  }
-
-  if (obstacle_positions_.empty()) {
-    // ✅ 临时修复方案：使用位置相关的安全函数
-    // 这样至少有梯度，DR margins会动态变化
-    if (state.size() < 2) {
-      return 0.0;
-    }
-
-    Eigen::Vector2d position(state[0], state[1]);
-
-    // 简单的安全函数：距离原点的距离
-    // 这给了我们一个非零梯度：∇h(position) = position / ‖position‖
-    double distance_to_origin = position.norm();
-
-    std::cout << "[DEBUG] Using fallback safety function (distance to origin)" << std::endl;
-    std::cout << "  position: [" << position.transpose() << "]" << std::endl;
-    std::cout << "  distance_to_origin: " << distance_to_origin << std::endl;
-    std::cout << "  safety_value: " << (distance_to_origin - safety_buffer_) << std::endl;
-
-    return distance_to_origin - safety_buffer_;
-  }
-
+  // ✅ 方案B: 使用costmap作为安全函数
   if (state.size() < 2) {
-    ROS_WARN("State dimension too small for obstacle checking");
     return 0.0;
   }
 
   Eigen::Vector2d position(state[0], state[1]);
-  double min_distance = findNearestObstacleDistance(position);
 
+  // ✅ 优先使用costmap
+  if (hasCostmap()) {
+    static int debug_count = 0;
+    if (debug_count++ < 5) {  // 只打印5次
+      double costmap_value = getCostmapValue(position[0], position[1]);
+      std::cout << "[DEBUG] Using COSTMAP safety function" << std::endl;
+      std::cout << "  position: [" << position[0] << ", " << position[1] << "]" << std::endl;
+      std::cout << "  costmap_value: " << costmap_value << std::endl;
+    }
+
+    double costmap_value = getCostmapValue(position[0], position[1]);
+
+    // h(x) = 1.0 - (costmap_value / 254.0)
+    // costmap_value = 0 (自由空间) -> h(x) = 1.0 (安全)
+    // costmap_value = 254 (障碍物) -> h(x) = 0.0 (危险)
+    double safety_value = 1.0 - (costmap_value / 254.0);
+
+    return safety_value - safety_buffer_;
+  }
+
+  // Fallback: 如果没有costmap，使用障碍物列表
+  if (obstacle_positions_.empty()) {
+    // ✅ 使用状态边界约束
+    // 地图边界: X ∈ [-10, 10], Y ∈ [-10, 10]
+    double x_max = 10.0;
+    double y_max = 10.0;
+
+    // h(x) = 1.0 - (x²/x_max² + y²/y_max²)
+    double normalized_x = position[0] / x_max;
+    double normalized_y = position[1] / y_max;
+    double safety_value = 1.0 - (normalized_x * normalized_x +
+                                  normalized_y * normalized_y);
+
+    static int debug_count = 0;
+    if (debug_count++ < 5) {
+      std::cout << "[DEBUG] Using STATE BOUND fallback (no costmap, no obstacles)" << std::endl;
+      std::cout << "  position: [" << position[0] << ", " << position[1] << "]" << std::endl;
+      std::cout << "  safety_value: " << safety_value << std::endl;
+    }
+
+    return safety_value - safety_buffer_;
+  }
+
+  // 使用障碍物列表
+  double min_distance = findNearestObstacleDistance(position);
   return min_distance - safety_buffer_;
 }
 
 Eigen::VectorXd NavigationSafetyFunction::gradient(const Eigen::VectorXd& state) const {
   if (state.size() < 2) {
-    return Eigen::VectorXd::Zero(3);
+    return Eigen::VectorXd::Zero(state.size());
   }
 
-  Eigen::Vector2d position(state[0], state[1]);
   Eigen::VectorXd grad = Eigen::VectorXd::Zero(state.size());
 
-  // Find nearest obstacle
-  if (obstacle_positions_.empty()) {
-    // ✅ Fallback模式：返回distance_to_origin的梯度
-    // h(x) = ‖x‖ - safety_buffer
-    // ∇h(x) = x / ‖x‖  (单位向量，指向远离原点方向)
-    double dist = position.norm();
-    if (dist > 1e-6) {
-      grad[0] = position[0] / dist;
-      grad[1] = position[1] / dist;
-      std::cout << "[DEBUG] Using fallback gradient (distance to origin)" << std::endl;
-      std::cout << "  position: [" << position.transpose() << "]" << std::endl;
-      std::cout << "  dist: " << dist << std::endl;
-      std::cout << "  gradient: [" << grad.transpose() << "]" << std::endl;
-    }
+  // ✅ 方案B: 使用costmap梯度（数值梯度）
+  if (hasCostmap()) {
+    double epsilon = 0.05;  // 5cm步长
+
+    // 计算数值梯度
+    double f_x_plus = getCostmapValue(state[0] + epsilon, state[1]);
+    double f_x_minus = getCostmapValue(state[0] - epsilon, state[1]);
+    double f_y_plus = getCostmapValue(state[0], state[1] + epsilon);
+    double f_y_minus = getCostmapValue(state[0], state[1] - epsilon);
+
+    // ∇h(x) = -∇(costmap/254) = -(1/254)∇costmap
+    grad[0] = -(f_x_plus - f_x_minus) / (2.0 * epsilon * 254.0);
+    grad[1] = -(f_y_plus - f_y_minus) / (2.0 * epsilon * 254.0);
+
     return grad;
   }
 
-  // Compute gradient toward nearest obstacle
+  // Fallback: 使用状态边界约束的梯度
+  if (obstacle_positions_.empty()) {
+    double x_max = 10.0;
+    double y_max = 10.0;
+
+    // ∇h(x) = [-2x/x_max², -2y/y_max²]
+    grad[0] = -2.0 * state[0] / (x_max * x_max);
+    grad[1] = -2.0 * state[1] / (y_max * y_max);
+
+    return grad;
+  }
+
+  // 使用障碍物列表的梯度
+  Eigen::Vector2d position(state[0], state[1]);
   Eigen::Vector2d nearest_obstacle = obstacle_positions_[0];
   double min_dist = (position - nearest_obstacle).norm();
 
@@ -147,6 +174,46 @@ double NavigationSafetyFunction::findNearestObstacleDistance(
   }
 
   return min_dist;
+}
+
+// ✅ 方案B: Costmap支持实现
+void NavigationSafetyFunction::setCostmap(
+    const nav_msgs::OccupancyGrid::ConstPtr& costmap) {
+  costmap_ = costmap;
+}
+
+double NavigationSafetyFunction::getCostmapValue(double x, double y) const {
+  if (!costmap_) {
+    return 0.0;  // 没有costmap数据时返回安全值（自由空间）
+  }
+
+  // 将世界坐标转换为costmap坐标
+  double resolution = costmap_->info.resolution;
+  double origin_x = costmap_->info.origin.position.x;
+  double origin_y = costmap_->info.origin.position.y;
+
+  int map_x = static_cast<int>((x - origin_x) / resolution);
+  int map_y = static_cast<int>((y - origin_y) / resolution);
+
+  // 检查边界
+  if (map_x < 0 || map_x >= static_cast<int>(costmap_->info.width) ||
+      map_y < 0 || map_y >= static_cast<int>(costmap_->info.height)) {
+    return 50.0;  // 超出costmap范围，返回未知值
+  }
+
+  int index = map_y * costmap_->info.width + map_x;
+  int8_t cost_value = costmap_->data[index];
+
+  // costmap: -1=未知, 0=自由, 1-254=障碍物概率, 254=障碍物
+  if (cost_value == -1) {
+    return 50.0;  // 未知区域
+  }
+
+  return static_cast<double>(cost_value);
+}
+
+bool NavigationSafetyFunction::hasCostmap() const {
+  return costmap_ != nullptr;
 }
 
 // ============================================================================
@@ -268,6 +335,21 @@ void DRTighteningNode::cmdVelCallback(
   current_cmd_vel_.header.stamp = ros::Time::now();
   current_cmd_vel_.twist = *msg;
   have_cmd_vel_ = true;
+}
+
+// ✅ 方案B: Costmap回调
+void DRTighteningNode::costmapCallback(
+  const nav_msgs::OccupancyGrid::ConstPtr& msg) {
+  // 更新safety_function的costmap数据
+  safety_function_->setCostmap(msg);
+
+  static int log_count = 0;
+  if (log_count++ < 3) {  // 只打印3次
+    ROS_INFO("📍 [COSTMAP] Received costmap: %d x %d, resolution: %.3f m",
+             msg->info.width, msg->info.height, msg->info.resolution);
+    ROS_INFO("   Origin: (%.2f, %.2f)",
+             msg->info.origin.position.x, msg->info.origin.position.y);
+  }
 }
 
 void DRTighteningNode::updateCallback(const ros::TimerEvent& event) {
@@ -668,6 +750,11 @@ bool DRTighteningNode::createConnections() {
   sub_cmd_vel_ = nh_.subscribe(
     "/cmd_vel", 1,
     &DRTighteningNode::cmdVelCallback, this);
+
+  // ✅ 方案B: 订阅costmap
+  sub_costmap_ = nh_.subscribe(
+    "/move_base/global_costmap/costmap", 1,
+    &DRTighteningNode::costmapCallback, this);
 
   // Setup publishers
   pub_margins_ = nh_.advertise<std_msgs::Float64MultiArray>(

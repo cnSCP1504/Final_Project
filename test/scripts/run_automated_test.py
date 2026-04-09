@@ -21,6 +21,12 @@ Automated Baseline Testing System - Python Version
 
     # 测试前3个货架，使用STL增强模型
     python3 run_automated_test.py --model stl --shelves 3
+
+    # 🔥 测试所有模型，每个模型测试10个货架（完整测试）
+    python3 run_automated_test.py --model all --shelves 10
+
+    # 快速测试所有模型（每个模型只测试1个货架）
+    python3 run_automated_test.py --model all --shelves 1 --no-viz
 """
 
 import os
@@ -46,6 +52,11 @@ import matplotlib
 matplotlib.use('Agg')  # 使用非交互式后端
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+
+# 抑制中文字体缺失警告
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning, module='matplotlib')
+warnings.filterwarnings("ignore", category=RuntimeWarning, module='matplotlib.backends')
 from typing import Dict, List, Tuple
 from scipy import stats
 
@@ -219,37 +230,61 @@ class ManuscriptMetricsCollector:
     def dr_margins_callback(self, msg):
         """DR边界回调"""
         if len(msg.data) > 0:
+            # ✅ 记录horizon（从第一次更新推断）
+            if 'dr_horizon' not in self.data:
+                # dr_margins包含horizon+1个值 [t=0, t=1, ..., t=horizon]
+                self.data['dr_horizon'] = len(msg.data) - 1
+
             # 保存所有margin值
             self.data['dr_margins_history'].extend(msg.data)
 
     def tracking_error_callback(self, msg):
-        """跟踪误差回调 - 接收Float64MultiArray"""
-        # msg.data 是一个数组，包含 [error_x, error_y, error_yaw, error_norm]
+        """跟踪误差回调 - 接收Float64MultiArray
+
+        tube_mpc发布的消息格式：
+        [0]: cte           - Cross-track error（横向位置误差）
+        [1]: etheta         - Heading error（角度误差，弧度）
+        [2]: error_norm     - 6D误差范数（包含位置和角度）
+        [3]: tube_radius    - 当前tube半径
+        """
         if len(msg.data) >= 4:
-            error_x = msg.data[0]
-            error_y = msg.data[1]
-            error_yaw = msg.data[2]
-            error_norm = msg.data[3]
+            cte = msg.data[0]          # Cross-track error（位置误差）
+            etheta = msg.data[1]        # Heading error（角度误差）
+            error_norm_6d = msg.data[2] # 6D误差范数
+            tube_radius = msg.data[3]   # Tube半径
 
-            # ✅ 修复：添加完整的tracking error数据（不只是norm）
-            self.data['tracking_error_history'].append([error_x, error_y, error_yaw, error_norm])
-            self.data['tracking_error_norm_history'].append(error_norm)
+            # ✅ 修复：使用正确的数据格式
+            # tracking_error_history: [cte, etheta, error_norm_6d, tube_radius]
+            self.data['tracking_error_history'].append([cte, etheta, error_norm_6d, tube_radius])
 
-            # 检查是否违反tube约束（假设tube半径为0.18）
-            tube_radius = 0.18
-            if error_norm > tube_radius:
-                self.data['tube_violations'].append(error_norm)
+            # ⚠️ 注意：error_norm_6d始终为0（Tube MPC的_e_current从未被更新）
+            # 所以tracking_error_norm_history改为记录综合误差：sqrt(cte² + etheta²)
+            combined_error = (cte**2 + etheta**2)**0.5
+            self.data['tracking_error_norm_history'].append(combined_error)
+
+            # ✅ 修复：使用综合误差检查tube约束
+            # 因为error_norm_6d始终为0，我们用sqrt(cte² + etheta²)代替
+            if combined_error > tube_radius:
+                self.data['tube_violations'].append(combined_error)
                 self.data['tube_violation_count'] += 1
 
-            # 计算empirical risk（违反DR安全边界）
-            # 安全违反定义为：tracking_error > 最新DR margin
+            # ✅ 关键修复：DR安全约束应该使用位置误差(cte)，而不是6D误差范数！
+            # 原因：DR安全函数h(x)只约束位置(x, y)，不约束角度
+            # 参考：NavigationSafetyFunction::evaluate() 只使用 state[0], state[1]
             self.data['safety_total_steps'] += 1
+
+            # 获取当前时间步(t=0)的DR margin
             if len(self.data['dr_margins_history']) > 0:
-                # 获取最新的DR margin（假设是最后添加的）
-                latest_dr_margin = self.data['dr_margins_history'][-1]
-                if error_norm > latest_dr_margin:
+                horizon = self.data.get('dr_horizon', 20)
+                latest_t0_margin_index = -(horizon + 1)
+                latest_dr_margin = self.data['dr_margins_history'][latest_t0_margin_index]
+
+                # ✅ 使用位置误差(cte)和DR margin比较
+                # cte = cross-track error = 垂直于路径的位置偏差
+                # 这是DR约束真正需要约束的量
+                if abs(cte) > latest_dr_margin:
                     self.data['safety_violation_count'] += 1
-                    self.data['safety_violations'].append(error_norm)
+                    self.data['safety_violations'].append(abs(cte))
         else:
             TestLogger.warning(f"tracking_error数据长度不足: {len(msg.data)}")
 
@@ -305,9 +340,10 @@ class ManuscriptMetricsCollector:
             metrics['satisfaction_probability'] = None
 
         # 2. Empirical Risk (安全违反率)
+        # ✅ 修复：使用tube_violation_count而不是safety_violation_count
         if self.data['safety_total_steps'] > 0:
             metrics['empirical_risk'] = (
-                self.data['safety_violation_count'] / self.data['safety_total_steps']
+                self.data['tube_violation_count'] / self.data['safety_total_steps']
             )
         else:
             metrics['empirical_risk'] = None
@@ -368,9 +404,11 @@ class ManuscriptMetricsCollector:
         metrics['tube_violation_count'] = self.data['tube_violation_count']
 
         # 7. Calibration Accuracy
+        # ✅ 修复：使用tube_violation_count而不是safety_violation_count
+        # tube_violation_count在所有模式下都有值，safety_violation_count可能为0
         if self.data['safety_total_steps'] > 0:
             metrics['observed_violation_rate'] = (
-                self.data['safety_violation_count'] / self.data['safety_total_steps']
+                self.data['tube_violation_count'] / self.data['safety_total_steps']
             )
             metrics['calibration_error'] = abs(
                 metrics['observed_violation_rate'] - self.data['target_delta']
@@ -380,7 +418,9 @@ class ManuscriptMetricsCollector:
             metrics['calibration_error'] = None
 
         # 附加统计信息
-        metrics['total_steps'] = self.data['stl_total_steps']
+        # ✅ 修复：使用safety_total_steps而不是stl_total_steps
+        # safety_total_steps在所有模式下都有值，stl_total_steps只在STL启用时才有值
+        metrics['total_steps'] = max(self.data['stl_total_steps'], self.data['safety_total_steps'])
         metrics['total_mpc_solves'] = self.data['mpc_total_solves']
 
         return metrics
@@ -408,7 +448,8 @@ class ManuscriptMetricsCollector:
         # 2. Empirical Risk
         if metrics['empirical_risk'] is not None:
             print(f"\n2️⃣  Empirical Risk (经验风险):")
-            print(f"   - 违反次数: {self.data['safety_violation_count']}/{self.data['safety_total_steps']}")
+            # ✅ 修复：使用tube_violation_count
+            print(f"   - 违反次数: {self.data['tube_violation_count']}/{self.data['safety_total_steps']}")
             print(f"   - 违反率: {metrics['empirical_risk']:.4f}")
             print(f"   - 目标风险 δ: {self.data['target_delta']:.2f}")
         else:
@@ -1304,6 +1345,7 @@ class AutomatedTestRunner:
             return
 
         manuscript_metrics = metrics['manuscript_metrics']
+        manuscript_raw_data = metrics.get('manuscript_raw_data', {})
 
         # 创建图表输出目录
         figures_dir = test_dir / "figures"
@@ -1312,8 +1354,8 @@ class AutomatedTestRunner:
         # 生成单测试指标报告
         self._generate_single_test_report(manuscript_metrics, test_dir, shelf)
 
-        # 生成单测试图表
-        self._generate_single_test_figures(manuscript_metrics, figures_dir, shelf)
+        # 生成单测试图表（传递raw_data用于绘图）
+        self._generate_single_test_figures(manuscript_metrics, manuscript_raw_data, figures_dir, shelf)
 
         TestLogger.success(f"  ✓ 测试 {shelf['id']} 数据处理完成")
 
@@ -1343,15 +1385,19 @@ class AutomatedTestRunner:
             # 1. Satisfaction Probability（扁平格式）
             if 'satisfaction_probability' in metrics:
                 sat = metrics['satisfaction_probability']
-                f.write("1. STL Satisfaction Probability\n")
-                if isinstance(sat, dict):
-                    f.write(f"   满足步数: {sat.get('satisfied_steps', 0)}/{sat.get('total_steps', 0)}\n")
-                    f.write(f"   最终鲁棒性: {sat.get('final_robustness', 0):.4f}\n")
-                    f.write(f"   平均鲁棒性: {sat.get('mean_robustness', 0):.4f}\n")
+                if sat is not None:  # ✅ 检查是否为None
+                    f.write("1. STL Satisfaction Probability\n")
+                    if isinstance(sat, dict):
+                        f.write(f"   满足步数: {sat.get('satisfied_steps', 0)}/{sat.get('total_steps', 0)}\n")
+                        f.write(f"   最终鲁棒性: {sat.get('final_robustness', 0):.4f}\n")
+                        f.write(f"   平均鲁棒性: {sat.get('mean_robustness', 0):.4f}\n")
+                    else:
+                        # 扁平格式，直接是概率值
+                        f.write(f"   满足概率: {float(sat):.4f}\n")
+                    f.write("\n")
                 else:
-                    # 扁平格式，直接是概率值
-                    f.write(f"   满足概率: {float(sat):.4f}\n")
-                f.write("\n")
+                    f.write("1. STL Satisfaction Probability\n")
+                    f.write("   满足概率: N/A (STL未启用)\n\n")
 
             # 2. Empirical Risk（扁平格式：observed_violation_rate）
             f.write("2. Empirical Risk (安全约束违反)\n")
@@ -1364,7 +1410,7 @@ class AutomatedTestRunner:
             f.write(f"   目标风险 δ: 0.05\n\n")
 
             # 3. Regret（扁平格式：avg_dynamic_regret）
-            if 'avg_dynamic_regret' in metrics:
+            if 'avg_dynamic_regret' in metrics and metrics['avg_dynamic_regret'] is not None:
                 f.write("3. Dynamic Regret\n")
                 f.write(f"   归一化遗憾: {metrics['avg_dynamic_regret']:.4f}\n\n")
 
@@ -1380,34 +1426,34 @@ class AutomatedTestRunner:
 
             # 5. Computation（扁平格式：median_solve_time, mean_solve_time等）
             f.write("5. Computation Time\n")
-            if 'median_solve_time' in metrics:
+            if 'median_solve_time' in metrics and metrics['median_solve_time'] is not None:
                 f.write(f"   中位数: {metrics['median_solve_time']:.2f} ms\n")
-            if 'mean_solve_time' in metrics:
+            if 'mean_solve_time' in metrics and metrics['mean_solve_time'] is not None:
                 f.write(f"   平均值: {metrics['mean_solve_time']:.2f} ms\n")
-            if 'p90_solve_time' in metrics:
+            if 'p90_solve_time' in metrics and metrics['p90_solve_time'] is not None:
                 f.write(f"   P90: {metrics['p90_solve_time']:.2f} ms\n")
-            if 'mpc_failure_count' in metrics:
+            if 'mpc_failure_count' in metrics and metrics['mpc_failure_count'] is not None:
                 f.write(f"   失败次数: {metrics['mpc_failure_count']}\n")
             f.write("\n")
 
             # 6. Tracking Error（扁平格式：mean_tracking_error等）
             f.write("6. Tracking Error\n")
-            if 'mean_tracking_error' in metrics:
+            if 'mean_tracking_error' in metrics and metrics['mean_tracking_error'] is not None:
                 f.write(f"   平均误差: {metrics['mean_tracking_error']*100:.2f} cm\n")
-            if 'max_tracking_error' in metrics:
+            if 'max_tracking_error' in metrics and metrics['max_tracking_error'] is not None:
                 f.write(f"   最大误差: {metrics['max_tracking_error']*100:.2f} cm\n")
-            if 'std_tracking_error' in metrics:
+            if 'std_tracking_error' in metrics and metrics['std_tracking_error'] is not None:
                 f.write(f"   标准差: {metrics['std_tracking_error']*100:.2f} cm\n")
-            if 'tube_occupancy_rate' in metrics:
+            if 'tube_occupancy_rate' in metrics and metrics['tube_occupancy_rate'] is not None:
                 f.write(f"   管占用量: {metrics['tube_occupancy_rate']*100:.2f}%\n")
             f.write("\n")
 
             # 7. Calibration（扁平格式：calibration_error）
             f.write("7. Calibration Accuracy\n")
             f.write(f"   目标风险 δ: 0.05\n")
-            if 'observed_violation_rate' in metrics:
+            if 'observed_violation_rate' in metrics and metrics['observed_violation_rate'] is not None:
                 f.write(f"   观察风险: {metrics['observed_violation_rate']:.4f}\n")
-            if 'calibration_error' in metrics:
+            if 'calibration_error' in metrics and metrics['calibration_error'] is not None:
                 f.write(f"   校准误差: {metrics['calibration_error']:.4f}\n")
                 is_well = metrics['calibration_error'] < 0.01
                 f.write(f"   是否校准良好: {'是' if is_well else '否'}\n")
@@ -1417,11 +1463,19 @@ class AutomatedTestRunner:
 
         TestLogger.success(f"  ✓ 指标报告已生成: {report_file}")
 
-    def _generate_single_test_figures(self, metrics: Dict, figures_dir: Path, shelf: Dict):
-        """生成单个测试的图表"""
+    def _generate_single_test_figures(self, metrics: Dict, raw_data: Dict, figures_dir: Path, shelf: Dict):
+        """生成单个测试的图表
+
+        Args:
+            metrics: manuscript_metrics字典（包含聚合指标）
+            raw_data: manuscript_raw_data字典（包含历史数据数组）
+            figures_dir: 图表输出目录
+            shelf: 货架信息
+        """
         # 设置matplotlib参数
         plt.rcParams['font.size'] = 10
-        plt.rcParams['font.family'] = 'serif'
+        plt.rcParams['font.family'] = ['sans-serif']  # 使用sans-serif，通常有更好的字体支持
+        plt.rcParams['axes.unicode_minus'] = False  # 正确显示负号
         plt.rcParams['figure.dpi'] = 100
         plt.rcParams['savefig.dpi'] = 300
         plt.rcParams['savefig.bbox'] = 'tight'
@@ -1440,9 +1494,9 @@ class AutomatedTestRunner:
                     fontsize=14, fontweight='bold')
 
         # 1. STL Robustness History (左上)
-        if 'stl_robustness_history' in metrics:
+        if 'stl_robustness_history' in raw_data and len(raw_data['stl_robustness_history']) > 0:
             ax = axes[0, 0]
-            history = metrics['stl_robustness_history']
+            history = raw_data['stl_robustness_history']
             ax.plot(history, color=COLORS['blue'], linewidth=1.5)
             ax.axhline(y=0, color=COLORS['green'], linestyle='--', linewidth=2, label='Satisfaction threshold')
             ax.set_xlabel('Time step', fontweight='bold')
@@ -1452,9 +1506,9 @@ class AutomatedTestRunner:
             ax.legend()
 
         # 2. Tracking Error (右上)
-        if 'tracking_error_norm_history' in metrics:
+        if 'tracking_error_norm_history' in raw_data and len(raw_data['tracking_error_norm_history']) > 0:
             ax = axes[0, 1]
-            errors = metrics['tracking_error_norm_history']
+            errors = raw_data['tracking_error_norm_history']
             ax.plot(np.array(errors) * 100, color=COLORS['blue'], linewidth=1.5)  # 转为cm
             tube_radius_cm = metrics.get('tube_radius', 0.18) * 100
             ax.axhline(y=tube_radius_cm, color=COLORS['red'], linestyle='--',
@@ -1466,9 +1520,9 @@ class AutomatedTestRunner:
             ax.legend()
 
         # 3. MPC Solve Time (左下)
-        if 'mpc_solve_times' in metrics:
+        if 'mpc_solve_times' in raw_data and len(raw_data['mpc_solve_times']) > 0:
             ax = axes[1, 0]
-            solve_times = metrics['mpc_solve_times']
+            solve_times = raw_data['mpc_solve_times']
             ax.plot(solve_times, color=COLORS['blue'], linewidth=1.5, alpha=0.7)
             ax.axhline(y=8, color=COLORS['green'], linestyle='--',
                       linewidth=2, label='Real-time budget (8 ms)')
@@ -1478,31 +1532,58 @@ class AutomatedTestRunner:
             ax.grid(alpha=0.3)
             ax.legend()
 
-        # 4. Satisfaction Probability (右下)
-        if 'satisfaction_probability' in metrics:
-            ax = axes[1, 1]
-            sat = metrics['satisfaction_probability']
+        # 4. Violation Comparison (右下) - ✅ 新增：Safety vs Tube Violation
+        ax = axes[1, 1]
 
-            # 处理两种数据格式：嵌套字典或扁平值
-            if isinstance(sat, dict):
-                # 嵌套格式
-                satisfied = sat.get('satisfied_steps', 0)
-                total = sat.get('total_steps', 1)
-            else:
-                # 扁平格式：sat是概率值(0.0-1.0)，需要从total_steps计算
-                total = metrics.get('total_steps', metrics.get('stl_total_steps', 1))
-                satisfied = int(sat * total) if total > 0 else 0
+        # 获取数据
+        tube_violations = metrics.get('tube_violation_count', 0)
+        total_steps = metrics.get('total_steps', metrics.get('safety_total_steps', 1))
 
-            rate = (satisfied / total * 100) if total > 0 else 0
+        # ✅ 关键修复：使用dr_margins_history判断是否有safety约束
+        # tube_mpc和stl模式没有DR约束，dr_margins_history为空或不存在
+        # dr和safe_regret模式有DR约束，dr_margins_history有数据
+        has_dr_margins = (
+            'dr_margins_history' in raw_data and
+            len(raw_data['dr_margins_history']) > 0
+        )
 
-            colors_pie = [COLORS['green'], COLORS['red']]
-            sizes = [rate, 100 - rate]
-            labels = [f'Satisfied\n({rate:.1f}%)', f'Violated\n({100-rate:.1f}%)']
+        if has_dr_margins:
+            safety_violations = raw_data.get('safety_violation_count', 0)
+            safety_total = raw_data.get('safety_total_steps', total_steps)
+            safety_rate = (safety_violations / safety_total * 100) if safety_total > 0 else 0
+            safety_label = f'Safety\n({safety_violations}/{safety_total} = {safety_rate:.1f}%)'
+            safety_value = safety_violations
+        else:
+            safety_label = 'Safety\n(N/A - 无DR约束)'
+            safety_value = 0  # 用于绘图，但标签会显示N/A
 
-            ax.pie(sizes, labels=labels, colors=colors_pie, autopct='',
-                  startangle=90, textprops={'fontsize': 10, 'fontweight': 'bold'})
-            ax.set_title(f'(d) STL Satisfaction Rate\n({satisfied}/{total} steps)',
-                        fontweight='bold')
+        tube_rate = (tube_violations / total_steps * 100) if total_steps > 0 else 0
+        tube_label = f'Tube\n({tube_violations}/{total_steps} = {tube_rate:.1f}%)'
+
+        # 创建柱状图
+        categories = ['Safety Violation', 'Tube Violation']
+        values = [safety_value, tube_violations]
+        colors_bar = [COLORS['red'] if has_dr_margins else COLORS['gray'], COLORS['blue']]
+        labels_display = [safety_label, tube_label]
+
+        bars = ax.bar(categories, values, color=colors_bar, alpha=0.7, edgecolor='black', linewidth=1.5)
+
+        # 添加数值标签
+        for i, (bar, label) in enumerate(zip(bars, labels_display)):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   label,
+                   ha='center', va='bottom', fontweight='bold', fontsize=10)
+
+        ax.set_ylabel('Violation Count', fontweight='bold')
+        ax.set_title('(d) Safety vs Tube Violations', fontweight='bold')
+        ax.grid(axis='y', alpha=0.3)
+
+        # 添加说明文字
+        if not has_dr_margins:
+            ax.text(0.5, 0.95, '⚠️ Safety约束未启用（无DR）',
+                   transform=ax.transAxes, ha='center', va='top',
+                   fontsize=9, style='italic', color=COLORS['red'])
 
         plt.tight_layout()
         dashboard_file = figures_dir / "performance_dashboard.png"
@@ -1579,7 +1660,7 @@ class AutomatedTestRunner:
                     total = sat.get('total_steps', 1)
                     if total > 0:
                         all_satisfied.append(satisfied / total)
-                else:
+                elif sat is not None:  # ✅ 检查是否为None
                     # 扁平格式，直接是概率值
                     all_satisfied.append(float(sat))
 
@@ -1634,7 +1715,7 @@ class AutomatedTestRunner:
         # 3. Regret（扁平格式：avg_dynamic_regret）
         all_regrets = []
         for test in all_tests_data:
-            if 'avg_dynamic_regret' in test:
+            if 'avg_dynamic_regret' in test and test['avg_dynamic_regret'] is not None:
                 all_regrets.append(float(test['avg_dynamic_regret']))
             elif 'regret' in test:
                 regret = test['regret']
@@ -1695,12 +1776,12 @@ class AutomatedTestRunner:
         total_failures = 0
 
         for test in all_tests_data:
-            if 'median_solve_time' in test:
+            if 'median_solve_time' in test and test['median_solve_time'] is not None:
                 # 扁平格式
                 all_medians.append(float(test['median_solve_time']))
-                if 'mean_solve_time' in test:
+                if 'mean_solve_time' in test and test['mean_solve_time'] is not None:
                     all_means.append(float(test['mean_solve_time']))
-                if 'mpc_failure_count' in test:
+                if 'mpc_failure_count' in test and test['mpc_failure_count'] is not None:
                     total_failures += test['mpc_failure_count']
             elif 'computation' in test:
                 # 嵌套格式
@@ -1727,12 +1808,12 @@ class AutomatedTestRunner:
         all_occupancy = []
 
         for test in all_tests_data:
-            if 'mean_tracking_error' in test:
+            if 'mean_tracking_error' in test and test['mean_tracking_error'] is not None:
                 # 扁平格式
                 all_mean_errors.append(float(test['mean_tracking_error']))
-                if 'max_tracking_error' in test:
+                if 'max_tracking_error' in test and test['max_tracking_error'] is not None:
                     all_max_errors.append(float(test['max_tracking_error']))
-                if 'tube_occupancy_rate' in test:
+                if 'tube_occupancy_rate' in test and test['tube_occupancy_rate'] is not None:
                     all_occupancy.append(float(test['tube_occupancy_rate']))
             elif 'tracking' in test:
                 # 嵌套格式
@@ -1755,7 +1836,7 @@ class AutomatedTestRunner:
         all_calibration_errors = []
 
         for test in all_tests_data:
-            if 'calibration_error' in test:
+            if 'calibration_error' in test and test['calibration_error'] is not None:
                 # 扁平格式
                 all_calibration_errors.append(float(test['calibration_error']))
             elif 'calibration' in test:
@@ -1863,7 +1944,8 @@ class AutomatedTestRunner:
 
         # 设置matplotlib参数
         plt.rcParams['font.size'] = 10
-        plt.rcParams['font.family'] = 'serif'
+        plt.rcParams['font.family'] = ['sans-serif']  # 使用sans-serif，通常有更好的字体支持
+        plt.rcParams['axes.unicode_minus'] = False  # 正确显示负号
         plt.rcParams['axes.labelsize'] = 12
         plt.rcParams['axes.labelweight'] = 'bold'
         plt.rcParams['axes.titlesize'] = 14
@@ -2171,6 +2253,12 @@ def main():
   # 测试前3个货架，使用STL增强模型
   python3 run_automated_test.py --model stl --shelves 3
 
+  # 🔥 测试所有模型，每个模型测试10个货架（完整测试）
+  python3 run_automated_test.py --model all --shelves 10
+
+  # 快速测试所有模型（每个模型只测试1个货架）
+  python3 run_automated_test.py --model all --shelves 1 --no-viz
+
   # 快速测试（无Gazebo和RViz）
   python3 run_automated_test.py --model tube_mpc --headless --shelves 2
 
@@ -2180,9 +2268,9 @@ def main():
     )
 
     parser.add_argument('--model',
-                       choices=['tube_mpc', 'stl', 'dr', 'safe_regret'],
+                       choices=['tube_mpc', 'stl', 'dr', 'safe_regret', 'all'],
                        default='tube_mpc',
-                       help='模型类型 (默认: tube_mpc)')
+                       help='模型类型 (默认: tube_mpc, "all"测试所有模型)')
 
     parser.add_argument('--shelves', dest='num_shelves',
                        type=int, default=10,
@@ -2239,6 +2327,78 @@ def main():
 
     TestLogger.info(f"可视化配置: Gazebo={args.use_gazebo}, RViz={args.visualization}")
 
+    # ✅ 处理 "all" 模式：循环测试所有模型
+    if args.model == 'all':
+        all_models = ['tube_mpc', 'stl', 'dr', 'safe_regret']
+        TestLogger.info("="*70)
+        TestLogger.info("🚀 ALL MODE: 测试所有模型")
+        TestLogger.info("="*70)
+        TestLogger.info(f"模型列表: {', '.join(all_models)}")
+        TestLogger.info(f"每个模型测试货架数: {args.num_shelves}")
+        TestLogger.info(f"总测试数: {len(all_models)} × {args.num_shelves} = {len(all_models) * args.num_shelves}")
+        TestLogger.info("="*70)
+
+        # 记录所有模型的测试结果
+        all_results = {}
+        all_success = True
+
+        for model in all_models:
+            TestLogger.info("")
+            TestLogger.info("="*70)
+            TestLogger.info(f"📊 开始测试模型: {model} ({all_models.index(model)+1}/{len(all_models)})")
+            TestLogger.info("="*70)
+
+            # 为每个模型创建独立的参数副本
+            import copy
+            model_args = copy.deepcopy(args)
+            model_args.model = model
+
+            # 创建测试运行器
+            runner = AutomatedTestRunner(model_args)
+
+            # 运行测试
+            try:
+                success = runner.run_tests()
+                all_results[model] = 'SUCCESS' if success else 'FAILED'
+                if not success:
+                    all_success = False
+            except KeyboardInterrupt:
+                TestLogger.warning(f"模型 {model} 测试被用户中断")
+                all_results[model] = 'INTERRUPTED'
+                all_success = False
+                break
+            except Exception as e:
+                TestLogger.error(f"模型 {model} 测试过程出错: {e}")
+                all_results[model] = 'ERROR'
+                all_success = False
+                import traceback
+                traceback.print_exc()
+
+            # 清理ROS进程
+            runner.cleanup_ros_processes()
+
+            # 等待一段时间再开始下一个模型测试
+            if model != all_models[-1]:  # 不是最后一个模型
+                TestLogger.info(f"⏳ 等待 {args.interval} 秒后开始下一个模型测试...")
+                time.sleep(args.interval)
+
+        # 打印所有模型的测试结果汇总
+        TestLogger.info("")
+        TestLogger.info("="*70)
+        TestLogger.info("📈 ALL MODE 测试结果汇总")
+        TestLogger.info("="*70)
+        for model, result in all_results.items():
+            status_icon = "✅" if result == "SUCCESS" else "❌"
+            TestLogger.info(f"  {status_icon} {model}: {result}")
+        TestLogger.info("="*70)
+
+        final_result = "✅ 全部成功" if all_success else "❌ 部分失败"
+        TestLogger.info(f"总体结果: {final_result}")
+        TestLogger.info("="*70)
+
+        sys.exit(0 if all_success else 1)
+
+    # 单个模型模式
     # 创建测试运行器
     runner = AutomatedTestRunner(args)
 
