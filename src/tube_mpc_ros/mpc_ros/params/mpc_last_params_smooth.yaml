@@ -20,9 +20,9 @@ MPCPlannerROS:
   acc_lim_theta: 3.0       # 降低角加速度：4.0 → 3.0
   acc_lim_y: 0.0
 
-  # ========== 目标容差 ==========
-  yaw_goal_tolerance: 0.3
-  xy_goal_tolerance: 0.2
+  # ========== 目标容差（统一半径0.5m） ==========
+  yaw_goal_tolerance: 0.5
+  xy_goal_tolerance: 0.5
   latch_xy_goal_tolerance: false
 
   # ========== 路径跟随权重 ==========

@@ -284,6 +284,14 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
             double total_length = 0.0;
             int sampling = _downSampling;
 
+            // Calculate total path length and distance to goal
+            double total_path_length = 0.0;
+            for(size_t i = 1; i < pathMsg->poses.size(); i++) {
+                double dx = pathMsg->poses[i].pose.position.x - pathMsg->poses[i-1].pose.position.x;
+                double dy = pathMsg->poses[i].pose.position.y - pathMsg->poses[i-1].pose.position.y;
+                total_path_length += sqrt(dx*dx + dy*dy);
+            }
+
             if(_waypointsDist <=0.0)
             {
                 double dx = pathMsg->poses[1].pose.position.x - pathMsg->poses[0].pose.position.x;
@@ -292,12 +300,28 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
                 _downSampling = int(_pathLength/10.0/_waypointsDist);
             }
 
+            // ✅ Dynamic downsampling: Use smaller downsampling for short paths
+            // Goal: Ensure at least 12 points even for short paths (last 2-3 meters)
+            int effective_downsampling = _downSampling;
+            int min_path_points = 12;  // Minimum desired points for control
+            int estimated_points = int(total_path_length / _waypointsDist / _downSampling);
+
+            if(estimated_points < min_path_points && _downSampling > 1) {
+                // Reduce downsampling to get more points
+                effective_downsampling = std::max(1, int(total_path_length / _waypointsDist / min_path_points));
+                ROS_INFO("🔧 Dynamic downsampling: %d → %d (path: %.2fm, est. points: %d → %d)",
+                         _downSampling, effective_downsampling, total_path_length,
+                         estimated_points, int(total_path_length / _waypointsDist / effective_downsampling));
+            }
+
+            sampling = effective_downsampling;  // Use effective downsampling
+
             for(int i =0; i< pathMsg->poses.size(); i++)
             {
                 if(total_length > _pathLength)
                     break;
 
-                if(sampling == _downSampling)
+                if(sampling == effective_downsampling)
                 {
                     geometry_msgs::PoseStamped tempPose;
                     _tf_listener.transformPose(_odom_frame, ros::Time(0) , pathMsg->poses[i], _map_frame, tempPose);
@@ -308,7 +332,7 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
                 sampling = sampling + 1;
             }
 
-            if(odom_path.poses.size() >= 4 )  // 需要至少4个点才能进行3阶多项式拟合
+            if(odom_path.poses.size() >= 2 )  // ✅ Reduced from 4 to 2 - 使用1阶多项式也能控制
             {
                 _odom_path = odom_path;
                 _path_computed = true;
@@ -316,10 +340,10 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
                 odom_path.header.stamp = ros::Time::now();
                 _pub_odompath.publish(odom_path);
 
-                ROS_INFO("Path transformation successful: %d points transformed from %s to %s",
-                         (int)odom_path.poses.size(), _map_frame.c_str(), _odom_frame.c_str());
+                ROS_INFO("Path transformation successful: %zu points (total path: %.2fm), transformed from %s to %s",
+                         odom_path.poses.size(), total_path_length, _map_frame.c_str(), _odom_frame.c_str());
             }
-            else  // 路径点数<4，检查是否已经到达目标
+            else  // 路径点数<2，检查是否已经到达目标
             {
                 // 检查机器人是否已经非常接近目标
                 try {
@@ -336,27 +360,15 @@ void TubeMPCNode::pathCB(const nav_msgs::Path::ConstPtr& pathMsg)
                     {
                         _goal_reached = true;
                         _path_computed = false;
-                        ROS_INFO("Goal reached! Path has only %d point(s), distance to goal: %.2f m < %.2f m",
-                                 (int)odom_path.poses.size(), dist2goal, arrival_threshold);
+                        ROS_INFO("✅ Goal reached! Distance: %.2f m < %.2f m", dist2goal, arrival_threshold);
                         cout << "=== Goal Reached ===" << endl;
                     }
                     else
                     {
-                        // ⚠️ 关键修复：即使路径点数少，如果距离目标还远，仍然允许控制
-                        // 只要有至少2个点，就可以继续控制
-                        if(odom_path.poses.size() >= 2)
-                        {
-                            _path_computed = true;  // 允许继续控制
-                            ROS_WARN_THROTTLE(2.0, "Path has only %d point(s), distance to goal: %.2f m. Continuing control...",
-                                              (int)odom_path.poses.size(), dist2goal);
-                        }
-                        else
-                        {
-                            // 路径点数太少（<2），无法控制
-                            ROS_WARN_THROTTLE(2.0, "Path has only %d point(s), distance to goal: %.2f m. Waiting for replan...",
-                                              (int)odom_path.poses.size(), dist2goal);
-                            _path_computed = false;
-                        }
+                        // 路径点数太少（<2），无法控制
+                        ROS_WARN_THROTTLE(2.0, "⚠️ Path has only %zu point(s), distance to goal: %.2f m. Waiting for replan...",
+                                          odom_path.poses.size(), dist2goal);
+                        _path_computed = false;
                     }
                 }
                 catch(tf::TransformException& ex) {

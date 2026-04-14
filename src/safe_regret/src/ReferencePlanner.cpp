@@ -101,7 +101,10 @@ ReferencePlanner::ReferencePlanner(
     learning_rate_(0.1),
     strategy_weights_(state_dim, 1.0)
 #ifdef HAVE_OMPL
-    , use_ompl_(true)
+    , use_ompl_(true),
+      goal_x_(0.0),
+      goal_y_(0.0),
+      has_goal_(false)
 #endif
     {
 
@@ -241,6 +244,23 @@ void ReferencePlanner::reset() {
   }
 #endif
 }
+
+// ============================================================================
+// Goal Management (OMPL-enabled)
+// ============================================================================
+
+#ifdef HAVE_OMPL
+void ReferencePlanner::setGoal(double goal_x, double goal_y) {
+  goal_x_ = goal_x;
+  goal_y_ = goal_y;
+  has_goal_ = true;
+}
+
+void ReferencePlanner::getGoal(double& goal_x, double& goal_y) const {
+  goal_x = goal_x_;
+  goal_y = goal_y_;
+}
+#endif
 
 ReferenceTrajectory ReferencePlanner::solveAbstractPlanning(
   const BeliefState& belief,
@@ -599,8 +619,8 @@ ReferenceTrajectory ReferencePlanner::solveAbstractPlanningWithOMPL(
   // Extract 2D position from belief state (assuming first 2 elements are x, y)
   Point2D start(belief.mean[0], belief.mean[1]);
 
-  // For simplicity, goal is at origin (can be extended)
-  Point2D goal(0.0, 0.0);
+  // Use set goal if available, otherwise fallback to origin
+  Point2D goal(has_goal_ ? goal_x_ : 0.0, has_goal_ ? goal_y_ : 0.0);
 
   // Generate multiple topological paths
   int num_alternatives = 3;

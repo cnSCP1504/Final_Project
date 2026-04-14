@@ -1,0 +1,23 @@
+=================================================================
+           测试摘要 / Test Summary
+=================================================================
+
+测试时间 / Test Time: 2026-04-12 16:08:31
+
+模型配置 / Model Configuration:
+  - 模型类型 / Model Type: dr
+  - 货架ID / Shelf ID: shelf_07
+  - 货架名称 / Shelf Name: 货架07 - 北侧中
+
+测试结果 / Test Result: SUCCESS
+
+测试参数 / Test Parameters:
+  - 超时时间 / Timeout: 240秒
+  - Gazebo启用 / Gazebo Enabled: True
+  - 可视化 / Visualization: True
+
+文件位置 / File Locations:
+  - Launch日志 / Launch Log: logs/launch.log
+  - 测试指标 / Metrics: metrics.json
+
+=================================================================

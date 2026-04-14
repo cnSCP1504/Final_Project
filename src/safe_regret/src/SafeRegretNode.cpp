@@ -27,7 +27,8 @@ SafeRegretNode::SafeRegretNode(ros::NodeHandle& nh, ros::NodeHandle& private_nh)
     received_mpc_trajectory_(false),
     received_stl_data_(false),
     received_dr_margins_(false),
-    received_odom_(false) {
+    received_odom_(false),
+    received_goal_(false) {
 
   // Initialize belief state (3D: x, y, theta)
   current_belief_.mean = Eigen::VectorXd::Zero(3);
@@ -83,6 +84,7 @@ bool SafeRegretNode::initialize() {
   ROS_INFO("    - /stl_budget");
   ROS_INFO("    - /dr_margins");
   ROS_INFO("    - /odom");
+  ROS_INFO("    - /move_base_simple/goal");
   ROS_INFO("  Publishing to:");
   ROS_INFO("    - %s", params_.reference_trajectory_topic.c_str());
   ROS_INFO("    - %s", params_.regret_metrics_topic.c_str());
@@ -181,6 +183,11 @@ void SafeRegretNode::setupROSConnections() {
   sub_odom_ = nh_.subscribe(
     "/odom", 1,
     &SafeRegretNode::odomCallback, this);
+
+  // Goal subscriber (from move_base or user input)
+  sub_goal_ = nh_.subscribe(
+    "/move_base_simple/goal", 1,
+    &SafeRegretNode::goalCallback, this);
 
   // Publishers
   pub_reference_trajectory_ = nh_.advertise<nav_msgs::Path>(
@@ -293,6 +300,25 @@ void SafeRegretNode::odomCallback(const nav_msgs::Odometry::ConstPtr& msg) {
   double roll, pitch, yaw;
   m.getRPY(roll, pitch, yaw);
   current_belief_.mean[2] = yaw;
+}
+
+void SafeRegretNode::goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
+  current_goal_ = *msg;
+  received_goal_ = true;
+
+  // Update reference planner with new goal
+  if (reference_planner_) {
+#ifdef HAVE_OMPL
+    reference_planner_->setGoal(
+      msg->pose.position.x,
+      msg->pose.position.y
+    );
+    ROS_INFO("ReferencePlanner: Goal set to (%.2f, %.2f)",
+             msg->pose.position.x, msg->pose.position.y);
+#else
+    ROS_INFO("Goal received but OMPL not available");
+#endif
+  }
 }
 
 // ============================================================================

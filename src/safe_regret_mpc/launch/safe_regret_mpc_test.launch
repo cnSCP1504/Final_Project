@@ -238,7 +238,7 @@
     <param name="delivery_yaw" value="0.0"/>  <!-- 卸货点朝向 -->
 
     <!-- 目标到达阈值 -->
-    <param name="goal_radius" value="0.5"/>   <!-- 到达判定半径 (m) -->
+    <param name="goal_radius" value="0.5"/>   <!-- 统一到达判定半径: 0.5m -->
   </node>
 
   <!-- ========== Random Obstacles (启动时随机放置障碍物) ========== -->

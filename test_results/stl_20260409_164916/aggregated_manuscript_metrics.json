@@ -1,0 +1,56 @@
+{
+  "metadata": {
+    "total_tests": 1,
+    "computation_time": "2026-04-09 16:50:51",
+    "model": "stl"
+  },
+  "satisfaction_probability": {
+    "mean": 1.0,
+    "std": 0.0,
+    "min": 1.0,
+    "max": 1.0,
+    "median": 1.0
+  },
+  "empirical_risk": {
+    "mean": 0.25524475524475526,
+    "std": 0.0,
+    "min": 0.25524475524475526,
+    "max": 0.25524475524475526,
+    "aggregated_risk": 0.2358642972536349,
+    "total_violations": 146,
+    "total_steps": 619
+  },
+  "feasibility": {
+    "mean": 1.0,
+    "std": 0.0,
+    "min": 1.0,
+    "max": 1.0,
+    "aggregated_rate": 1.0,
+    "total_feasible": 58,
+    "total_solves": 58
+  },
+  "computation": {
+    "median_of_medians": 13.000000000000002,
+    "mean_median": 13.000000000000002,
+    "std_median": 0.0,
+    "min_median": 13.000000000000002,
+    "max_median": 13.000000000000002,
+    "mean_of_means": 12.931034482758621,
+    "total_failures": 0
+  },
+  "tracking": {
+    "mean_error_mean": 0.5177693104095333,
+    "mean_error_std": 0.0,
+    "max_error_mean": 2.8435715687526595,
+    "occupancy_mean": 0.7447552447552448,
+    "occupancy_std": 0.0
+  },
+  "calibration": {
+    "mean_error": 0.20524475524475527,
+    "std_error": 0.0,
+    "min_error": 0.20524475524475527,
+    "max_error": 0.20524475524475527,
+    "well_calibrated_count": 0,
+    "total_tests": 1
+  }
+}

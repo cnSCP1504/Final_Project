@@ -145,6 +145,7 @@ private:
   ros::Subscriber sub_stl_budget_;         // From Phase 2
   ros::Subscriber sub_dr_margins_;         // From Phase 3 (DR Tightening)
   ros::Subscriber sub_odom_;               // Robot odometry
+  ros::Subscriber sub_goal_;               // Goal position
 
   // Publishers (to Phase 1-3 and monitoring)
   ros::Publisher pub_reference_trajectory_; // Reference to Tube MPC
@@ -174,6 +175,7 @@ private:
   double latest_stl_budget_;
   std::vector<double> latest_dr_margins_;
   nav_msgs::Odometry latest_odom_;
+  geometry_msgs::PoseStamped current_goal_;  // Current goal position
 
   // Flags
   bool received_tracking_error_;
@@ -181,6 +183,7 @@ private:
   bool received_stl_data_;
   bool received_dr_margins_;
   bool received_odom_;
+  bool received_goal_;
 
   // Logging
   std::ofstream log_file_;
@@ -192,6 +195,7 @@ private:
   void stlBudgetCallback(const std_msgs::Float64::ConstPtr& msg);
   void drMarginsCallback(const std_msgs::Float64MultiArray::ConstPtr& msg);
   void odomCallback(const nav_msgs::Odometry::ConstPtr& msg);
+  void goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg);
 
   // Timer callback
   void planningTimerCallback(const ros::TimerEvent& event);

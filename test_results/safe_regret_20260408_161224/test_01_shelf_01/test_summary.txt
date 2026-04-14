@@ -1,0 +1,50 @@
+=================================================================
+           测试摘要 / Test Summary
+=================================================================
+
+测试时间 / Test Time: 2026-04-08 16:13:43
+
+模型配置 / Model Configuration:
+  - 模型类型 / Model Type: safe_regret
+  - 货架ID / Shelf ID: shelf_01
+  - 货架名称 / Shelf Name: 货架01 - 南侧西
+
+测试结果 / Test Result: ROS_DIED
+
+❌ ROS进程崩溃详情 / ROS Process Crash Details:
+  - 退出码 / Exit Code: -9
+  - 运行时间 / Runtime: 57.8秒
+  - 已完成目标 / Goals Reached: 0/2
+
+  - Launch日志最后20行 / Last 20 lines of launch.log:
+    [INFO] [1775635953.664623]: ======================================================================
+    [INFO] [1775635953.665396]:
+    📦 [任务 1/2] 前往取货点 S1 (Pickup Station)
+    [INFO] [1775635953.665968]: ----------------------------------------------------------------------
+    [INFO] [1775635953.666495]: 等待move_base准备就绪...
+    [33m[WARN] [1775635957.650333449]: Waiting for odometry data...[0m
+    [31m[ERROR] [1775635959.481692906]: Client [/goal_monitor_8727_1775635959352] wants topic /tube_boundaries to have datatype/md5sum [geometry_msgs/PolygonStamped/c6be8f7dc3bee7fe9e8d296070f53340], but our version has [nav_msgs/Path/6227e2b7e9cce15051f669a5e197bbf7]. Dropping connection.[0m
+    [31m[ERROR] [1775635962.277377086]: Client [/goal_monitor_8747_1775635962150] wants topic /tube_boundaries to have datatype/md5sum [geometry_msgs/PolygonStamped/c6be8f7dc3bee7fe9e8d296070f53340], but our version has [nav_msgs/Path/6227e2b7e9cce15051f669a5e197bbf7]. Dropping connection.[0m
+    [33m[WARN] [1775635962.650322171]: Waiting for odometry data...[0m
+    [33m[WARN] [1775635967.750265376]: Waiting for odometry data...[0m
+    [33m[WARN] [1775635972.750414721]: Waiting for odometry data...[0m
+    [33m[WARN] [1775635977.849422741]: Waiting for odometry data...[0m
+    [33m[WARN] [1775635982.850423655]: Waiting for odometry data...[0m
+    [33m[WARN] [1775635987.949572489]: Waiting for odometry data...[0m
+    [33m[WARN] [1775635992.949686084]: Waiting for odometry data...[0m
+    [33m[WARN] [1775635997.949754220]: Waiting for odometry data...[0m
+    [33m[WARN] [1775636002.949764638]: Waiting for odometry data...[0m
+    [33m[WARN] [1775636007.950193188]: Waiting for odometry data...[0m
+    [33m[WARN] [1775636013.050386102]: Waiting for odometry data...[0m
+    [33m[WARN] [1775636018.149616111]: Waiting for odometry data...[0m
+
+测试参数 / Test Parameters:
+  - 超时时间 / Timeout: 60秒
+  - Gazebo启用 / Gazebo Enabled: False
+  - 可视化 / Visualization: False
+
+文件位置 / File Locations:
+  - Launch日志 / Launch Log: logs/launch.log
+  - 测试指标 / Metrics: metrics.json
+
+=================================================================

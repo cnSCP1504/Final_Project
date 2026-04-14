@@ -88,7 +88,7 @@ terminal_set:
   y_max: 5.0
   theta_min: -3.14159
   theta_max: 3.14159
-  v_min: 0.0
+  v_min: -0.3  # 允许终端集有负速度（倒车）
   v_max: 0.6  # 降低终端集最大速度 (原1.0)
 
   # Update frequency
@@ -130,12 +130,12 @@ dynamics:
       0.0, 0.0, 0.0, 0.0, 0.95, 0.0,
       0.0, 0.0, 0.0, 0.0, 0.0, 0.95]
 
-  B: [0.0, 0.0,
-      0.0, 0.0,
-      0.1, 0.0,
-      0.9, 0.0,
-      0.0, 0.0,
-      0.0, 0.1]
+  B: [0.1, 0.0,      # x: 受v_linear影响（前进方向）
+      0.0, 0.1,      # y: 受v_linear影响（前进方向）
+      0.0, 1.0,      # theta: 受v_angular影响（旋转）← 提高到1.0
+      0.9, 0.0,      # v: 受v_linear影响
+      0.0, 0.0,      # cte: 不受直接输入影响
+      0.0, 1.0]      # etheta: 受v_angular影响 ← 提高到1.0
 
   G: [0.01, 0.0,
       0.0, 0.01,
@@ -147,19 +147,27 @@ dynamics:
 # ========== Cost Matrices ==========
 cost:
   # State cost Q (diagonal)
-  Q: [1.0, 1.0, 1.0, 1.0, 10.0, 10.0]
+  # ✅ FIX: Increase x,y tracking weights and align cte/etheta ratio with Tube MPC
+  # Tube MPC: w_cte=50, w_etheta=30 (ratio 1.67:1)
+  # Safe-Regret: cte=30, etheta=15 (ratio 2:1, prioritizing path tracking over heading)
+  Q: [10.0, 10.0, 5.0, 1.0, 30.0, 15.0]
 
   # Input cost R (diagonal)
-  R: [1.0, 1.0]
+  R: [1.0, 5.0]  # ✅ FIX: Increase angular velocity cost to reduce aggressive turning
 
 # ========== State/Input Constraints ==========
 constraints:
   # State bounds
-  x_min: [-10.0, -10.0, -3.14159, 0.0, -1.0, -0.5]
-  x_max: [10.0, 10.0, 3.14159, 1.0, 1.0, 0.5]
+  # x_min/max: [x, y, theta, v, cte, etheta]
+  # v: 允许负速度（倒车），便于调整位置
+  x_min: [-10.0, -10.0, -3.14159, -0.3, -1.0, -0.5]
+  x_max: [10.0, 10.0, 3.14159, 0.6, 1.0, 0.5]
 
   # Input bounds
-  u_min: [0.0, -2.5]
+  # u_min: [v_linear_min, v_angular_min]
+  # v_linear_min: 允许倒车（负值），方便调整位置和避障
+  # v_angular_min: 允许双向旋转
+  u_min: [-0.3, -2.5]
   u_max: [0.6, 2.5]  # 降低线速度上限 (原1.0→0.6)，增加角速度上限 (原1.5→2.5)
 
 # ========== Topic Names ==========

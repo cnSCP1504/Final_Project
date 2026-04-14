@@ -1,0 +1,136 @@
+{
+  "test_start_time": "2026-04-09 17:48:50",
+  "test_end_time": null,
+  "test_status": "RUNNING",
+  "total_goals": 2,
+  "goals_reached": [],
+  "position_history": [
+    {
+      "time": 1.0454638004302979,
+      "x": -7.999954002264796,
+      "y": 1.264441034083564e-07,
+      "yaw": 1.0134451880347516e-06
+    },
+    {
+      "time": 2.008955240249634,
+      "x": -7.9999538399163175,
+      "y": 1.2429239606246613e-07,
+      "yaw": 1.0054913281357335e-06
+    },
+    {
+      "time": 3.017573595046997,
+      "x": -7.999953669080966,
+      "y": 1.220275963364385e-07,
+      "yaw": 9.971198786001509e-07
+    },
+    {
+      "time": 4.022974729537964,
+      "x": -7.999953498304987,
+      "y": 1.1976295947432998e-07,
+      "yaw": 9.88749504739925e-07
+    },
+    {
+      "time": 5.0295469760894775,
+      "x": -7.999953327588489,
+      "y": 1.1749848793928396e-07,
+      "yaw": 9.803802171632922e-07
+    },
+    {
+      "time": 6.037860155105591,
+      "x": -7.999953156931562,
+      "y": 1.152341840925819e-07,
+      "yaw": 9.72012026041423e-07
+    },
+    {
+      "time": 7.047518730163574,
+      "x": -7.999952986334313,
+      "y": 1.129700509137814e-07,
+      "yaw": 9.63644943836202e-07
+    },
+    {
+      "time": 8.04941201210022,
+      "x": -7.9999528157968305,
+      "y": 1.1070609059408717e-07,
+      "yaw": 9.552789799792904e-07
+    },
+    {
+      "time": 9.009576559066772,
+      "x": -7.999952653841661,
+      "y": 1.0855548998797635e-07,
+      "yaw": 9.473323571892885e-07
+    },
+    {
+      "time": 10.00767970085144,
+      "x": -7.999952483420962,
+      "y": 1.0629187347048244e-07,
+      "yaw": 9.389686026810571e-07
+    },
+    {
+      "time": 11.018779277801514,
+      "x": -7.999952313060279,
+      "y": 1.0402843523681019e-07,
+      "yaw": 9.306059901575645e-07
+    },
+    {
+      "time": 12.031450271606445,
+      "x": -7.999952142759699,
+      "y": 1.017651786841259e-07,
+      "yaw": 9.222445334433224e-07
+    }
+  ],
+  "ros_died": false,
+  "manuscript_metrics": {
+    "satisfaction_probability": null,
+    "empirical_risk": null,
+    "avg_dynamic_regret": null,
+    "avg_safe_regret": null,
+    "feasibility_rate": null,
+    "median_solve_time": null,
+    "p90_solve_time": null,
+    "mean_solve_time": null,
+    "std_solve_time": null,
+    "mpc_failure_count": 0,
+    "mean_tracking_error": null,
+    "std_tracking_error": null,
+    "max_tracking_error": null,
+    "min_tracking_error": null,
+    "tube_occupancy_rate": null,
+    "tube_violation_count": 0,
+    "observed_violation_rate": null,
+    "calibration_error": null,
+    "total_steps": 0,
+    "total_mpc_solves": 0
+  },
+  "manuscript_raw_data": {
+    "stl_robustness_history": [],
+    "stl_budget_history": [],
+    "stl_satisfaction_count": 0,
+    "stl_total_steps": 0,
+    "safety_violations": [],
+    "dr_margins_history": [],
+    "tracking_error_history": [],
+    "safety_violation_count": 0,
+    "safety_total_steps": 0,
+    "instantaneous_cost": [],
+    "reference_cost": [],
+    "dynamic_regret": [],
+    "safe_regret": [],
+    "tracking_contribution": [],
+    "nominal_contribution": [],
+    "mpc_feasible_count": 0,
+    "mpc_infeasible_count": 0,
+    "mpc_total_solves": 0,
+    "feasibility_rate": 0.0,
+    "mpc_solve_times": [],
+    "mpc_solve_time_median": 0.0,
+    "mpc_solve_time_p90": 0.0,
+    "mpc_failure_count": 0,
+    "tracking_error_norm_history": [],
+    "tube_violations": [],
+    "tube_violation_count": 0,
+    "tube_occupancy_rate": 0.0,
+    "target_delta": 0.05,
+    "observed_violation_rate": 0.0,
+    "calibration_error": 0.0
+  }
+}

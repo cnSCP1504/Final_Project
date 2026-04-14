@@ -348,6 +348,7 @@ private:
     // Solution
     VectorXd optimal_control_;
     std::vector<VectorXd> predicted_trajectory_;
+    std::vector<VectorXd> reference_trajectory_;  ///< Reference trajectory for tracking
     double cost_value_;
     bool mpc_feasible_;
     double solve_time_;

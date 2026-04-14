@@ -157,24 +157,48 @@ public:
 
         Ipopt::Index idx = 0;
         for (size_t t = 0; t < mpc_->mpc_steps_; ++t) {
+            // Get current state
             VectorXd x_t(mpc_->state_dim_);
             for (size_t i = 0; i < mpc_->state_dim_; ++i) {
                 x_t(i) = x[idx++];
             }
 
+            // Get control input
             VectorXd u_t(mpc_->input_dim_);
             for (size_t i = 0; i < mpc_->input_dim_; ++i) {
                 u_t(i) = x[idx++];
             }
 
-            obj_value += x_t.dot(mpc_->Q_ * x_t) + u_t.dot(mpc_->R_ * u_t);
+            // ✅ FIX: Compute tracking error (x_t - ref_t), not just x_t
+            VectorXd tracking_error(mpc_->state_dim_);
+            if (t < mpc_->reference_trajectory_.size()) {
+                tracking_error = x_t - mpc_->reference_trajectory_[t];
+            } else if (!mpc_->reference_trajectory_.empty()) {
+                tracking_error = x_t - mpc_->reference_trajectory_.back();
+            } else {
+                tracking_error = x_t;  // No reference, just minimize state
+            }
+
+            // ✅ Objective: minimize tracking error and control effort
+            obj_value += tracking_error.dot(mpc_->Q_ * tracking_error) + u_t.dot(mpc_->R_ * u_t);
         }
 
+        // Terminal cost
         VectorXd x_N(mpc_->state_dim_);
         for (size_t i = 0; i < mpc_->state_dim_; ++i) {
             x_N(i) = x[idx++];
         }
-        obj_value += x_N.dot(mpc_->Q_ * x_N);
+
+        // ✅ FIX: Terminal tracking error
+        VectorXd terminal_error(mpc_->state_dim_);
+        if (mpc_->mpc_steps_ < mpc_->reference_trajectory_.size()) {
+            terminal_error = x_N - mpc_->reference_trajectory_[mpc_->mpc_steps_];
+        } else if (!mpc_->reference_trajectory_.empty()) {
+            terminal_error = x_N - mpc_->reference_trajectory_.back();
+        } else {
+            terminal_error = x_N;
+        }
+        obj_value += terminal_error.dot(mpc_->Q_ * terminal_error);
 
         if (mpc_->stl_enabled_ && mpc_->stl_weight_ > 0.0) {
             obj_value -= mpc_->stl_weight_ * mpc_->stl_robustness_;
@@ -187,16 +211,29 @@ public:
                      Ipopt::Number* grad_f) override {
         Ipopt::Index idx = 0;
         for (size_t t = 0; t < mpc_->mpc_steps_; ++t) {
+            // Get current state
             VectorXd x_t(mpc_->state_dim_);
             for (size_t i = 0; i < mpc_->state_dim_; ++i) {
                 x_t(i) = x[idx];
             }
 
-            VectorXd grad_x = 2.0 * mpc_->Q_ * x_t;
+            // ✅ FIX: Compute tracking error gradient
+            VectorXd tracking_error(mpc_->state_dim_);
+            if (t < mpc_->reference_trajectory_.size()) {
+                tracking_error = x_t - mpc_->reference_trajectory_[t];
+            } else if (!mpc_->reference_trajectory_.empty()) {
+                tracking_error = x_t - mpc_->reference_trajectory_.back();
+            } else {
+                tracking_error = x_t;
+            }
+
+            // Gradient: d/dx (tracking_error' Q tracking_error) = 2 * Q * tracking_error
+            VectorXd grad_x = 2.0 * mpc_->Q_ * tracking_error;
             for (size_t i = 0; i < mpc_->state_dim_; ++i) {
                 grad_f[idx++] = grad_x(i);
             }
 
+            // Get control input
             VectorXd u_t(mpc_->input_dim_);
             for (size_t i = 0; i < mpc_->input_dim_; ++i) {
                 u_t(i) = x[idx];
@@ -208,12 +245,23 @@ public:
             }
         }
 
+        // Terminal state gradient
         VectorXd x_N(mpc_->state_dim_);
         for (size_t i = 0; i < mpc_->state_dim_; ++i) {
             x_N(i) = x[idx];
         }
 
-        VectorXd grad_N = 2.0 * mpc_->Q_ * x_N;
+        // ✅ FIX: Terminal tracking error gradient
+        VectorXd terminal_error(mpc_->state_dim_);
+        if (mpc_->mpc_steps_ < mpc_->reference_trajectory_.size()) {
+            terminal_error = x_N - mpc_->reference_trajectory_[mpc_->mpc_steps_];
+        } else if (!mpc_->reference_trajectory_.empty()) {
+            terminal_error = x_N - mpc_->reference_trajectory_.back();
+        } else {
+            terminal_error = x_N;
+        }
+
+        VectorXd grad_N = 2.0 * mpc_->Q_ * terminal_error;
         for (size_t i = 0; i < mpc_->state_dim_; ++i) {
             grad_f[idx++] = grad_N(i);
         }
@@ -417,21 +465,22 @@ private:
 // ========== Ipopt Solver Wrapper ==========
 
 bool SafeRegretMPC::solveWithIpopt(std::vector<double>& vars) {
-    std::cout << "Solving MPC optimization with Ipopt..." << std::endl;
+    // std::cout << "Solving MPC optimization with Ipopt..." << std::endl;  // Reduce log output
 
     try {
         Ipopt::SmartPtr<Ipopt::IpoptApplication> app = new Ipopt::IpoptApplication();
 
-        // Configure Ipopt
-        app->Options()->SetIntegerValue("max_iter", 100);
-        app->Options()->SetNumericValue("tol", 1e-3);  // Relaxed tolerance
-        app->Options()->SetNumericValue("acceptable_tol", 1e-2);  // Relaxed acceptable tolerance
-        app->Options()->SetNumericValue("dual_inf_tol", 1e-1);  // Relaxed dual infeasibility tolerance
-        app->Options()->SetNumericValue("compl_inf_tol", 1e-2);  // Relaxed complementarity tolerance
-        app->Options()->SetIntegerValue("print_level", 5);  // Always print for debugging
-        app->Options()->SetStringValue("print_timing_statistics", "yes");
+        // Configure Ipopt for fast solving
+        app->Options()->SetIntegerValue("max_iter", 50);  // Reduced from 100
+        app->Options()->SetNumericValue("tol", 1e-2);  // Relaxed from 1e-3
+        app->Options()->SetNumericValue("acceptable_tol", 5e-2);  // Relaxed from 1e-2
+        app->Options()->SetNumericValue("dual_inf_tol", 1e-1);
+        app->Options()->SetNumericValue("compl_inf_tol", 1e-1);  // Relaxed from 1e-2
+        app->Options()->SetIntegerValue("print_level", 0);  // Suppress output for speed
+        app->Options()->SetStringValue("print_timing_statistics", "no");  // Disable timing output
         app->Options()->SetStringValue("mu_strategy", "adaptive");
         app->Options()->SetStringValue("hessian_approximation", "limited-memory");
+        app->Options()->SetNumericValue("max_cpu_time", 0.1);  // 100ms time limit
 
         // Initialize
         Ipopt::ApplicationReturnStatus status = app->Initialize();
@@ -451,18 +500,14 @@ bool SafeRegretMPC::solveWithIpopt(std::vector<double>& vars) {
         if (status == Ipopt::Solve_Succeeded ||
             status == Ipopt::Solved_To_Acceptable_Level ||
             status == Ipopt::Search_Direction_Becomes_Too_Small) {
-            std::cout << "MPC solve succeeded!" << std::endl;
-            std::cout << "  Status: " << status << std::endl;
-            std::cout << "  Cost: " << cost_value_ << std::endl;
-            std::cout << "  Control: [" << optimal_control_(0) << ", " << optimal_control_(1) << "]" << std::endl;
+            // std::cout << "MPC solve succeeded!" << std::endl;  // Reduce log
             return true;
         } else {
-            std::cerr << "MPC solve failed with status: " << status << std::endl;
+            // std::cerr << "MPC solve failed with status: " << status << std::endl;
 
             // Check if we have a valid solution despite failure status
             if (optimal_control_.norm() > 1e-6) {
-                std::cout << "Using partial solution with control: ["
-                         << optimal_control_(0) << ", " << optimal_control_(1) << "]" << std::endl;
+                // std::cout << "Using partial solution" << std::endl;
                 return true;
             }
 

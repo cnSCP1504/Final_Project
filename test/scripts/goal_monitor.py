@@ -32,7 +32,7 @@ class GoalMonitor:
 
         Args:
             goals: 目标点列表 [(x1, y1, yaw1), (x2, y2, yaw2), ...]
-            goal_radius: 到达判定半径（米）
+            goal_radius: 到达判定半径（米），统一为0.5m
             output_file: 输出文件路径
             timeout: 超时时间（秒）
         """
@@ -257,8 +257,8 @@ def main():
     parser = argparse.ArgumentParser(description='目标到达监控器')
     parser.add_argument('--goals', nargs='+', required=True,
                        help='目标点列表，格式: x1,y1,yaw1 x2,y2,yaw2')
-    parser.add_argument('--radius', type=float, default=0.5,
-                       help='到达判定半径（米），默认: 0.5')
+    parser.add_argument('--radius', type=float, default=0.65,
+                       help='到达判定半径（米），默认: 0.65')
     parser.add_argument('--timeout', type=int, default=240,
                        help='超时时间（秒），默认: 240')
     parser.add_argument('--output', type=str, default=None,

@@ -195,6 +195,20 @@ public:
    * @brief Check if OMPL is available
    */
   bool isOMPLAvailable() const { return use_ompl_ && ompl_planner_ != nullptr; }
+
+  /**
+   * @brief Set goal position for reference planning
+   * @param goal_x Goal x coordinate
+   * @param goal_y Goal y coordinate
+   */
+  void setGoal(double goal_x, double goal_y);
+
+  /**
+   * @brief Get current goal position
+   * @param goal_x Output: Goal x coordinate
+   * @param goal_y Output: Goal y coordinate
+   */
+  void getGoal(double& goal_x, double& goal_y) const;
 #endif
 
 private:
@@ -217,6 +231,11 @@ private:
   Eigen::VectorXd workspace_bounds_;  ///< [xmin, xmax, ymin, ymax]
   std::vector<Obstacle2D> obstacles_;  ///< Known obstacles
   bool use_ompl_;  ///< Enable/disable OMPL planning
+
+  // Goal position for reference planning
+  double goal_x_;  ///< Goal x coordinate
+  double goal_y_;  ///< Goal y coordinate
+  bool has_goal_;  ///< Whether goal has been set
 #endif
 
   // Helper functions

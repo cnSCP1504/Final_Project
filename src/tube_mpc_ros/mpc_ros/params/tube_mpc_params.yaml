@@ -3,20 +3,20 @@ MPCPlannerROS:
   map_frame: map
   odom_frame: odom
   base_frame: base_footprint
-  min_trans_vel: 0.1
+  min_trans_vel: 0.01  # 降低最小移动速度：0.1 → 0.01
   max_vel_x: 0.8  # 降低最大线速度 (原1.5)
-  min_vel_x: -0.1
+  min_vel_x: -0.3  # 允许倒车：-0.1 → -0.3
   max_vel_y: 0.0
   min_vel_y: 0.0
-  trans_stopped_vel: 0.1
+  trans_stopped_vel: 0.01  # 降低停止阈值：0.1 → 0.01
   max_rot_vel: 3.5  # 保持原值
-  min_rot_vel: 0.1
-  rot_stopped_vel: 0.1
+  min_rot_vel: 0.01  # 降低最小旋转速度：0.1 → 0.01
+  rot_stopped_vel: 0.01  # 降低旋转停止阈值：0.1 → 0.01
   acc_lim_x: 3.0
   acc_lim_theta: 6.0
   acc_lim_y: 0.0
   yaw_goal_tolerance: 0.5
-  xy_goal_tolerance: 0.3
+  xy_goal_tolerance: 0.5  # 统一目标半径: 0.5m
   latch_xy_goal_tolerance: false
   path_distance_bias: 32.0
   goal_distance_bias: 20.0

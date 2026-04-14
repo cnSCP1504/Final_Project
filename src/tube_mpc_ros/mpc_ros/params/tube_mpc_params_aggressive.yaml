@@ -23,9 +23,9 @@ MPCPlannerROS:
   acc_lim_theta: 5.0          # 激进的角加速度
   acc_lim_y: 0.0
 
-  # 目标容差 - 精确控制
-  yaw_goal_tolerance: 0.3
-  xy_goal_tolerance: 0.25
+  # 目标容差 - 统一半径0.5m
+  yaw_goal_tolerance: 0.5
+  xy_goal_tolerance: 0.5
   latch_xy_goal_tolerance: false
 
   # 路径跟踪参数 - 优化路径跟踪

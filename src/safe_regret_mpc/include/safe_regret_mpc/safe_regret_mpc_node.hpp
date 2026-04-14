@@ -3,6 +3,7 @@
 
 #include <ros/ros.h>
 #include <std_msgs/Bool.h>
+#include <std_msgs/Float32.h>
 #include <std_msgs/Float64MultiArray.h>
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Path.h>
@@ -74,9 +75,14 @@ private:
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg);
 
     /**
-     * @brief STL robustness callback (from STL monitor)
+     * @brief STL robustness callback (from STL monitor) - STLRobustness message
      */
     void stlRobustnessCallback(const safe_regret_mpc::STLRobustness::ConstPtr& msg);
+
+    /**
+     * @brief STL robustness callback (from STL monitor) - Float32 raw message
+     */
+    void stlRobustnessRawCallback(const std_msgs::Float32::ConstPtr& msg);
 
     /**
      * @brief DR margins callback (from DR tightening) - Float64MultiArray version

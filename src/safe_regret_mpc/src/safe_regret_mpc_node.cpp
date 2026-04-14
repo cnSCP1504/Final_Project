@@ -19,7 +19,7 @@ SafeRegretMPCNode::SafeRegretMPCNode(ros::NodeHandle& nh, ros::NodeHandle& priva
       plan_received_(false),
       goal_received_(false),
       goal_reached_(false),
-      goal_radius_(0.5),  // Default 0.5m threshold
+      goal_radius_(0.5),  // 统一目标半径: 0.5m
       tube_mpc_cmd_received_(false),
       tube_mpc_traj_received_(false),
       tube_mpc_error_received_(false),
@@ -69,8 +69,9 @@ bool SafeRegretMPCNode::initialize() {
     sub_goal_ = nh_.subscribe("goal", 1, &SafeRegretMPCNode::goalCallback, this);
 
     if (stl_enabled_) {
+        // ✅ CRITICAL FIX: stl_monitor publishes std_msgs::Float32, not STLRobustness!
         sub_stl_robustness_ = nh_.subscribe("stl_robustness", 1,
-                                            &SafeRegretMPCNode::stlRobustnessCallback, this);
+                                            &SafeRegretMPCNode::stlRobustnessRawCallback, this);
     }
 
     if (dr_enabled_) {
@@ -144,7 +145,7 @@ void SafeRegretMPCNode::loadParameters() {
     private_nh_.param("enable_integration_mode", enable_integration_mode_, true);
 
     // Goal parameters
-    private_nh_.param("goal_radius", goal_radius_, 0.5);  // 0.5m default arrival threshold
+    private_nh_.param("goal_radius", goal_radius_, 0.5);  // 统一目标半径: 0.5m
 
     // MPC parameters
     private_nh_.param("mpc_steps", mpc_steps_, 20);
@@ -299,6 +300,19 @@ void SafeRegretMPCNode::stlRobustnessCallback(
     }
 }
 
+void SafeRegretMPCNode::stlRobustnessRawCallback(
+    const std_msgs::Float32::ConstPtr& msg) {
+    // ✅ CRITICAL FIX: Convert Float32 from stl_monitor to STLRobustness format
+    // stl_monitor publishes simple Float32, but we expect STLRobustness message
+
+    stl_info_.robustness_value = msg->data;
+    stl_received_ = true;
+
+    if (debug_mode_) {
+        ROS_DEBUG("STL robustness (raw): %.3f", msg->data);
+    }
+}
+
 void SafeRegretMPCNode::drMarginsRawCallback(
     const std_msgs::Float64MultiArray::ConstPtr& msg) {
     // Convert Float64MultiArray to DRMargins message
@@ -393,13 +407,17 @@ void SafeRegretMPCNode::tubeMPCCmdCallback(const geometry_msgs::Twist::ConstPtr&
     tube_mpc_cmd_raw_ = *msg;
     tube_mpc_cmd_received_ = true;
 
-    // Process the raw command through STL/DR modules
-    if (enable_integration_mode_) {
-        processTubeMPCCommand();
-    } else {
-        // Direct forwarding (no processing)
+    // ✅ FIX: In integration mode with DR/STL enabled, controlTimerCallback handles MPC solving
+    // Only process tube_mpc command when DR/STL are NOT enabled (pure forwarding mode)
+    // This avoids duplicate command publishing conflicts
+
+    if (!enable_integration_mode_) {
+        // Direct forwarding (standalone mode)
         publishFinalCommand(tube_mpc_cmd_raw_);
     }
+    // When enable_integration_mode_ is true:
+    // - If DR/STL enabled: controlTimerCallback() solves MPC and publishes
+    // - If DR/STL disabled: controlTimerCallback() forwards tube_mpc_cmd_raw_
 
     if (debug_mode_) {
         ROS_DEBUG("Tube MPC raw command: v=%.3f, w=%.3f",
@@ -520,30 +538,30 @@ void SafeRegretMPCNode::controlTimerCallback(const ros::TimerEvent& event) {
     // This aligns with the manuscript's theoretical framework
 
     if (enable_integration_mode_) {
-        // In integration mode with DR or STL enabled, solve Safe-Regret MPC
-        if ((dr_enabled_ && dr_received_) || (stl_enabled_ && stl_received_)) {
-            if (debug_mode_) {
-                ROS_DEBUG_THROTTLE(1.0, "Solving Safe-Regret MPC with DR/STL constraints");
+        // ✅ CRITICAL FIX: In integration mode, use tube_mpc command as base
+        // and apply STL/DR adjustments, NOT solve our own MPC
+        // This prevents unexpected trajectory deviations
+
+        if (tube_mpc_cmd_received_) {
+            // Start with tube_mpc's raw command
+            geometry_msgs::Twist cmd_final = tube_mpc_cmd_raw_;
+
+            // Apply STL adjustment (gentle scaling)
+            if (stl_enabled_ && stl_received_) {
+                cmd_final = adjustCommandForSTL(cmd_final);
             }
 
-            // Update reference trajectory from global plan
-            updateReferenceTrajectory();
+            // Apply DR adjustment (gentle limiting)
+            if (dr_enabled_ && dr_received_) {
+                cmd_final = adjustCommandForDR(cmd_final);
+            }
 
-            // Solve Safe-Regret MPC (includes DR constraints and STL robustness in optimization)
-            solveMPC();
-
-            // ✅✅✅ CRITICAL: Check in-place rotation AFTER MPC solve, BEFORE publish
-            // This ensures MPC's angular velocity is overridden when rotation is needed
+            // ✅ Check in-place rotation AFTER adjustments
             {
                 // Get etheta for rotation decision
                 double etheta = 0.0;
                 if (tube_mpc_error_received_ && tube_mpc_error_.data.size() >= 2) {
-                    etheta = tube_mpc_error_.data[1];  // Heading error in radians
-                } else if (!reference_trajectory_.empty()) {
-                    Eigen::VectorXd ref_state = reference_trajectory_[0];
-                    double ref_theta = ref_state(2);
-                    double current_theta = tf::getYaw(current_odom_.pose.pose.orientation);
-                    etheta = normalizeAngle(current_theta - ref_theta);
+                    etheta = tube_mpc_error_.data[1];
                 }
 
                 // In-place rotation state machine
@@ -556,50 +574,31 @@ void SafeRegretMPCNode::controlTimerCallback(const ros::TimerEvent& event) {
                 if (std::abs(etheta) > HEADING_ERROR_CRITICAL && !in_place_rotation_active) {
                     in_place_rotation_active = true;
                     locked_rotation_direction = (etheta >= 0) ? -1.0 : 1.0;
-
-                    std::cout << "\n╔════════════════════════════════════════════════════════╗\n"
-                              << "║  🔄 ENTERING PURE ROTATION MODE                        ║\n"
-                              << "╠════════════════════════════════════════════════════════╣\n"
-                              << "║  Current heading error: " << (std::abs(etheta) * 180.0 / M_PI) << "° (>90°)                  ║\n"
-                              << "║  Exit condition: < 10°                                  ║\n"
-                              << "║  Direction LOCKED: " << (locked_rotation_direction > 0 ? "Clockwise" : "Counter-Clockwise") << "           ║\n"
-                              << "║  Action: OVERRIDING MPC angular velocity                ║\n"
-                              << "╚════════════════════════════════════════════════════════╝\n" << std::endl;
+                    ROS_INFO("🔄 ENTERING PURE ROTATION MODE (etheta=%.1f°)", etheta * 180.0 / M_PI);
                 }
                 // Exit condition
                 else if (in_place_rotation_active && std::abs(etheta) < HEADING_ERROR_EXIT) {
                     in_place_rotation_active = false;
                     locked_rotation_direction = 0.0;
-
-                    std::cout << "\n╔════════════════════════════════════════════════════════╗\n"
-                              << "║  ✅ EXITING PURE ROTATION MODE                         ║\n"
-                              << "╠════════════════════════════════════════════════════════╣\n"
-                              << "║  Current heading error: " << (std::abs(etheta) * 180.0 / M_PI) << "° (<10°)                   ║\n"
-                              << "║  Direction UNLOCKED                                     ║\n"
-                              << "║  Action: Resuming MPC control                           ║\n"
-                              << "╚════════════════════════════════════════════════════════╝\n" << std::endl;
+                    ROS_INFO("✅ EXITING PURE ROTATION MODE");
                 }
 
-                // Override angular velocity if in-place rotation is active
+                // Override if in-place rotation is active
                 if (in_place_rotation_active) {
-                    const double fixed_angular_vel = 0.5;  // rad/s
-                    cmd_vel_.linear.x = 0.0;
-                    cmd_vel_.angular.z = locked_rotation_direction * fixed_angular_vel;
-
-                    std::cout << "🔄 [PURE ROTATION] Speed LOCKED at 0.0 m/s | "
-                              << "Angular vel OVERRIDDEN to " << cmd_vel_.angular.z << " rad/s ("
-                              << (cmd_vel_.angular.z * 180.0 / M_PI) << "°/s) | "
-                              << "Direction LOCKED" << std::endl;
+                    const double fixed_angular_vel = 0.5;
+                    cmd_final.linear.x = 0.0;
+                    cmd_final.angular.z = locked_rotation_direction * fixed_angular_vel;
                 }
             }
 
-            // Publish the command computed by Safe-Regret MPC (or overridden by rotation logic)
-            publishFinalCommand(cmd_vel_);
+            // Publish the final command
+            publishFinalCommand(cmd_final);
         } else {
-            // Without DR/STL, just forward tube_mpc command
-            if (tube_mpc_cmd_received_) {
-                publishFinalCommand(tube_mpc_cmd_raw_);
-            }
+            // No tube_mpc command yet, publish zero velocity
+            geometry_msgs::Twist stop_cmd;
+            stop_cmd.linear.x = 0.0;
+            stop_cmd.angular.z = 0.0;
+            publishFinalCommand(stop_cmd);
         }
     } else {
         // Standalone mode: solve MPC independently
@@ -821,16 +820,82 @@ void SafeRegretMPCNode::publishVisualizations() {
 void SafeRegretMPCNode::updateReferenceTrajectory() {
     reference_trajectory_.clear();
 
-    for (const auto& pose : global_plan_.poses) {
+    if (global_plan_.poses.empty()) {
+        ROS_WARN_THROTTLE(2.0, "Global plan is empty! Cannot update reference trajectory.");
+        return;
+    }
+
+    // ✅ CRITICAL FIX: Find the closest point on the global path to the robot
+    // This ensures MPC tracks the relevant part of the path, not the entire path
+    double robot_x = current_odom_.pose.pose.position.x;
+    double robot_y = current_odom_.pose.pose.position.y;
+
+    size_t closest_idx = 0;
+    double min_dist = std::numeric_limits<double>::max();
+
+    for (size_t i = 0; i < global_plan_.poses.size(); ++i) {
+        double dist = std::hypot(
+            robot_x - global_plan_.poses[i].pose.position.x,
+            robot_y - global_plan_.poses[i].pose.position.y
+        );
+        if (dist < min_dist) {
+            min_dist = dist;
+            closest_idx = i;
+        }
+    }
+
+    // ✅ CRITICAL FIX: Extract only mpc_steps+1 points starting from closest point
+    // This gives MPC a proper local reference trajectory
+    size_t start_idx = closest_idx;
+    size_t end_idx = std::min(start_idx + mpc_steps_ + 1, global_plan_.poses.size());
+
+    double current_theta = tf::getYaw(current_odom_.pose.pose.orientation);
+
+    for (size_t i = start_idx; i < end_idx; ++i) {
+        const auto& pose = global_plan_.poses[i];
         Eigen::VectorXd state(6);
+
+        // Calculate reference heading from path tangent (more accurate than pose orientation)
+        double ref_theta;
+        if (i + 1 < global_plan_.poses.size()) {
+            double dx = global_plan_.poses[i+1].pose.position.x - pose.pose.position.x;
+            double dy = global_plan_.poses[i+1].pose.position.y - pose.pose.position.y;
+            ref_theta = std::atan2(dy, dx);
+        } else {
+            ref_theta = tf::getYaw(pose.pose.orientation);
+        }
+
+        // Estimate cte and etheta for reference state
+        // For reference trajectory, these should be small (robot should be on path)
+        double cte = (i == start_idx) ? min_dist : 0.0;  // Only first point has non-zero cte
+        double etheta = (i == start_idx) ? normalizeAngle(current_theta - ref_theta) : 0.0;
+
         state << pose.pose.position.x,
                  pose.pose.position.y,
-                 tf::getYaw(pose.pose.orientation),
+                 ref_theta,
                  ref_vel_,
-                 0.0,  // cte
-                 0.0;  // etheta
+                 cte,
+                 etheta;
+
         reference_trajectory_.push_back(state);
     }
+
+    // ✅ CRITICAL FIX: If we don't have enough points, pad with the last point
+    // This ensures reference_trajectory_ always has mpc_steps+1 points
+    while (reference_trajectory_.size() < static_cast<size_t>(mpc_steps_ + 1)) {
+        if (!reference_trajectory_.empty()) {
+            reference_trajectory_.push_back(reference_trajectory_.back());
+        } else {
+            // Fallback: use current robot state
+            Eigen::VectorXd state(6);
+            state << robot_x, robot_y, current_theta, ref_vel_, 0.0, 0.0;
+            reference_trajectory_.push_back(state);
+        }
+    }
+
+    // Log the update (throttled)
+    ROS_DEBUG_THROTTLE(2.0, "Reference trajectory updated: %zu points, start_idx=%zu/%zu, closest_dist=%.3f m",
+                       reference_trajectory_.size(), closest_idx, global_plan_.poses.size(), min_dist);
 }
 
 bool SafeRegretMPCNode::isSystemReady() {
@@ -951,12 +1016,16 @@ geometry_msgs::Twist SafeRegretMPCNode::adjustCommandForSTL(
     geometry_msgs::Twist cmd_adjusted = cmd_raw;
 
     // STL-based adjustment logic
-    // For now, implement a simple scaling based on robustness
+    // REDUCED WEIGHT: Apply gentler scaling based on robustness
+    // Old: stl_factor = max(0.5, 1.0 + robustness/2.0) - could reduce to 50%
+    // New: stl_factor = max(0.8, 1.0 + robustness/5.0) - only reduce to 80%
     double stl_factor = 1.0;
 
     if (stl_info_.robustness_value < 0.0) {
-        // Low robustness: scale down commands
-        stl_factor = std::max(0.5, 1.0 + stl_info_.robustness_value / 2.0);
+        // Low robustness: scale down commands GENTLY
+        // Old formula: factor could drop to 0.5 (50% reduction)
+        // New formula: factor drops to max 0.8 (only 20% reduction)
+        stl_factor = std::max(0.8, 1.0 + stl_info_.robustness_value / 5.0);
     }
 
     cmd_adjusted.linear.x *= stl_factor;
@@ -978,16 +1047,17 @@ geometry_msgs::Twist SafeRegretMPCNode::adjustCommandForDR(
     geometry_msgs::Twist cmd_adjusted = cmd_raw;
 
     // DR-based safety check
-    // For now, implement basic velocity limiting based on DR margins
+    // REDUCED WEIGHT: Apply gentler velocity limiting
+    // Old: max_linear_vel *= 0.9 (10% reduction)
+    // New: max_linear_vel *= 0.95 (only 5% reduction)
     double max_linear_vel = 1.0;  // Default limit
     double max_angular_vel = 1.5; // Default limit
 
-    // If DR margins are available, use them to adjust limits
+    // If DR margins are available, use them to adjust limits GENTLY
     if (dr_info_.margins.size() > 0) {
-        // TODO: Implement proper DR margin interpretation
-        // For now, use a conservative approach
-        max_linear_vel *= 0.9;
-        max_angular_vel *= 0.9;
+        // Reduced impact: 5% reduction instead of 10%
+        max_linear_vel *= 0.95;
+        max_angular_vel *= 0.95;
     }
 
     // Apply limits

@@ -125,7 +125,10 @@ bool SafeRegretMPC::solve(const VectorXd& current_state,
                          const std::vector<VectorXd>& reference_trajectory) {
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    std::cout << "Solving Safe-Regret MPC..." << std::endl;
+    // std::cout << "Solving Safe-Regret MPC..." << std::endl;  // Reduce log
+
+    // ✅ Store reference trajectory for use in objective function
+    reference_trajectory_ = reference_trajectory;
 
     // Start performance monitoring
     perf_monitor_->startTiming();
@@ -186,11 +189,8 @@ bool SafeRegretMPC::solve(const VectorXd& current_state,
     mpc_feasible_ = solve_success;
 
     if (solve_success) {
-        // Extract optimal control
-        optimal_control_ = VectorXd::Zero(input_dim_);
-        for (size_t i = 0; i < input_dim_; ++i) {
-            optimal_control_(i) = vars[state_dim_ + i];
-        }
+        // ✅ FIX: optimal_control_ is already correctly set in finalize_solution()
+        // Do NOT overwrite with initial guess values from vars[]
 
         // ========== In-Place Rotation Control ==========
         // Extract heading error (etheta) from current state
@@ -203,7 +203,7 @@ bool SafeRegretMPC::solve(const VectorXd& current_state,
         // Apply speed limit based on rotation state (pass etheta for angular velocity override)
         applyRotationSpeedLimit(optimal_control_, etheta);
 
-        std::cout << "MPC solved successfully in " << solve_time_ << " ms" << std::endl;
+        // std::cout << "MPC solved successfully in " << solve_time_ << " ms" << std::endl;  // Reduce log
     } else {
         std::cerr << "MPC solve failed!" << std::endl;
     }

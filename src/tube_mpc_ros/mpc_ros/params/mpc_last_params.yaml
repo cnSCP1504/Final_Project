@@ -10,14 +10,14 @@ MPCPlannerROS:
     # true:  集成模式 - tube_mpc发布/cmd_vel_raw，由safe_regret_mpc处理后发布/cmd_vel
     # 默认false保持向后兼容
 
-  # ========== 速度限制（平滑模式） ==========
+  # ========== 速度限制（与safe_regret_mpc统一） ==========
   min_trans_vel: 0.1
-  max_vel_x: 1.2           # 降低最大速度：1.5 → 1.2
+  max_vel_x: 0.6           # 与safe_regret_mpc一致
   min_vel_x: -0.1
   max_vel_y: 0.0
   min_vel_y: 0.0
   trans_stopped_vel: 0.1
-  max_rot_vel: 2.0         # 降低最大角速度：2.5 → 2.0
+  max_rot_vel: 2.5         # 与safe_regret_mpc一致
   min_rot_vel: 0.1
   rot_stopped_vel: 0.1
 
@@ -26,9 +26,9 @@ MPCPlannerROS:
   acc_lim_theta: 3.0       # 降低角加速度：4.0 → 3.0
   acc_lim_y: 0.0
 
-  # ========== 目标容差 ==========
-  yaw_goal_tolerance: 0.3
-  xy_goal_tolerance: 0.2
+  # ========== 目标容差（统一半径0.5m） ==========
+  yaw_goal_tolerance: 0.5
+  xy_goal_tolerance: 0.5
   latch_xy_goal_tolerance: false
 
   # ========== 路径跟随权重 ==========
@@ -46,16 +46,16 @@ MPCPlannerROS:
   publish_cost_grid_pc: true
   debug_info: true
 
-  # ========== MPC核心参数（平滑版） ==========
-  max_speed: 0.9           # 降低最大速度
+  # ========== MPC核心参数（与safe_regret_mpc统一） ==========
+  max_speed: 0.6           # 与safe_regret_mpc一致
   waypoints_dist: -1.0
   path_length: 10.0        # 增加路径长度
   controller_freq: 20      # 提高控制频率（关键！）
-  mpc_steps: 25           # 增加预测步数
+  mpc_steps: 20           # 与safe_regret_mpc一致
 
-  # ========== 参考值 ==========
+  # ========== 参考值（与safe_regret_mpc统一） ==========
   mpc_ref_cte: 0.0
-  mpc_ref_vel: 0.7        # 适中速度
+  mpc_ref_vel: 0.3        # 与safe_regret_mpc一致
   mpc_ref_etheta: 0.0
 
   # ========== 代价函数权重（重点调整） ==========
@@ -67,8 +67,8 @@ MPCPlannerROS:
   mpc_w_accel: 15.0       # 提高加速度权重（关键！）
   mpc_w_accel_d: 10.0     # 提高加速度变化权重（关键！）
 
-  # ========== 控制约束 ==========
-  mpc_max_angvel: 1.8     # 降低最大角速度
+  # ========== 控制约束（与safe_regret_mpc统一） ==========
+  mpc_max_angvel: 2.5     # 与safe_regret_mpc一致
   mpc_max_throttle: 8.0   # 降低throttle
   mpc_bound_value: 1.0e3
 

@@ -1,0 +1,49 @@
+{
+  "metadata": {
+    "total_tests": 10,
+    "computation_time": "2026-04-13 16:10:20",
+    "model": "tube_mpc"
+  },
+  "empirical_risk": {
+    "mean": 0.2423611793978783,
+    "std": 0.2095572438015509,
+    "min": 0.13142857142857142,
+    "max": 0.8591304347826086,
+    "aggregated_risk": 0.40449110527850685,
+    "total_violations": 2774,
+    "total_steps": 6858
+  },
+  "feasibility": {
+    "mean": 1.0,
+    "std": 0.0,
+    "min": 1.0,
+    "max": 1.0,
+    "aggregated_rate": 1.0,
+    "total_feasible": 684,
+    "total_solves": 684
+  },
+  "computation": {
+    "median_of_medians": 17.5,
+    "mean_median": 17.4,
+    "std_median": 1.3564659966250536,
+    "min_median": 15.000000000000002,
+    "max_median": 19.0,
+    "mean_of_means": 17.316857595044706,
+    "total_failures": 0
+  },
+  "tracking": {
+    "mean_error_mean": 0.41696185423533494,
+    "mean_error_std": 0.0984735483043401,
+    "max_error_mean": 3.2301042987480932,
+    "occupancy_mean": 0.7576388206021216,
+    "occupancy_std": 0.2095572438015509
+  },
+  "calibration": {
+    "mean_error": 0.23736117939787832,
+    "std_error": 0.21271709971084998,
+    "min_error": 0.08142857142857142,
+    "max_error": 0.8591304347826086,
+    "well_calibrated_count": 0,
+    "total_tests": 10
+  }
+}
