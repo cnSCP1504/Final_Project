@@ -452,15 +452,56 @@ class ManuscriptMetricsCollector:
 
         # 7. Calibration Accuracy
         # ✅ 修复：对于DR模式，使用safety_violation_count计算校准误差
+        # ✅ 新增：区分方向性校准误差，正确解释安全边际
         if self.data['safety_total_steps'] > 0:
             # 使用empirical_risk作为observed_violation_rate
             metrics['observed_violation_rate'] = metrics['empirical_risk']
+
+            # 方向性校准误差 (可正可负)
+            # 负值 = 安全边际 (实际风险 < 目标)
+            # 正值 = 风险超标 (实际风险 > 目标)
+            metrics['directional_calibration_error'] = (
+                metrics['observed_violation_rate'] - self.data['target_delta']
+            )
+
+            # 绝对校准误差 (传统定义)
             metrics['calibration_error'] = abs(
                 metrics['observed_violation_rate'] - self.data['target_delta']
             )
+
+            # 校准比例 (实际/目标)
+            # < 1: 安全边际
+            # = 1: 完美校准
+            # > 1: 风险超标
+            if self.data['target_delta'] > 0:
+                metrics['calibration_ratio'] = (
+                    metrics['observed_violation_rate'] / self.data['target_delta']
+                )
+            else:
+                metrics['calibration_ratio'] = None
+
+            # 安全边际解释
+            if metrics['directional_calibration_error'] is not None:
+                if metrics['directional_calibration_error'] < 0:
+                    margin_pct = abs(metrics['directional_calibration_error']) * 100
+                    metrics['safety_margin'] = margin_pct  # 正安全边际
+                    metrics['calibration_status'] = 'conservative'  # 保守设计
+                elif metrics['directional_calibration_error'] > 0.01:
+                    metrics['safety_margin'] = 0
+                    metrics['calibration_status'] = 'over_risk'  # 风险超标
+                else:
+                    metrics['safety_margin'] = 0
+                    metrics['calibration_status'] = 'well_calibrated'  # 良好校准
+            else:
+                metrics['safety_margin'] = None
+                metrics['calibration_status'] = None
         else:
             metrics['observed_violation_rate'] = None
             metrics['calibration_error'] = None
+            metrics['directional_calibration_error'] = None
+            metrics['calibration_ratio'] = None
+            metrics['safety_margin'] = None
+            metrics['calibration_status'] = None
 
         # 附加统计信息
         # ✅ 修复：使用safety_total_steps而不是stl_total_steps
@@ -547,9 +588,41 @@ class ManuscriptMetricsCollector:
         # 7. Calibration
         if metrics['calibration_error'] is not None:
             print(f"\n7️⃣  Calibration Accuracy (校准精度):")
-            print(f"   - 观察违反率: {metrics['observed_violation_rate']:.4f}")
-            print(f"   - 目标风险: {self.data['target_delta']:.2f}")
-            print(f"   - 校准误差: {metrics['calibration_error']:.4f}")
+            print(f"   - 观察违反率: {metrics['observed_violation_rate']*100:.2f}%")
+            print(f"   - 目标风险 δ: {self.data['target_delta']*100:.1f}%")
+            print(f"   - 绝对校准误差: {metrics['calibration_error']*100:.2f}%")
+
+            # ✅ 新增：方向性校准误差和安全边际解释
+            if metrics.get('directional_calibration_error') is not None:
+                dir_error = metrics['directional_calibration_error']
+                print(f"   - 方向性误差: {dir_error*100:+.2f}% ", end="")
+                if dir_error < 0:
+                    print(f"(安全边际: 实际 < 目标)")
+                elif dir_error > 0:
+                    print(f"(风险超标: 实际 > 目标)")
+                else:
+                    print(f"(完美校准)")
+
+            if metrics.get('calibration_ratio') is not None:
+                ratio = metrics['calibration_ratio']
+                print(f"   - 校准比例: {ratio:.2f}x ", end="")
+                if ratio < 1:
+                    print(f"(保守设计)")
+                elif ratio > 1:
+                    print(f"(风险偏高)")
+                else:
+                    print(f"(完美校准)")
+
+            if metrics.get('safety_margin') is not None and metrics['safety_margin'] > 0:
+                print(f"   - 安全边际: {metrics['safety_margin']:.2f}%")
+
+            if metrics.get('calibration_status'):
+                status_map = {
+                    'conservative': '✅ 保守设计 (实际风险低于目标)',
+                    'well_calibrated': '✅ 良好校准',
+                    'over_risk': '⚠️ 风险超标 (实际风险高于目标)'
+                }
+                print(f"   - 状态: {status_map.get(metrics['calibration_status'], metrics['calibration_status'])}")
         else:
             print(f"\n7️⃣  Calibration Accuracy: 无数据")
 
