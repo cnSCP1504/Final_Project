@@ -7,12 +7,12 @@ dr_tightening_node:
   min_residuals_for_update: 50      # Minimum samples before computing margins
 
 # Risk Parameters
-  risk_level: 0.1                   # δ: Total violation probability (0.05-0.2)
+  risk_level: 0.15                  # δ: Total violation probability (✅ TUNED: 0.05→0.15 for smaller κ)
   risk_allocation: "uniform"        # Strategy: "uniform" or "deadline_weighted"
   confidence_level: 0.95            # Confidence for ambiguity set
 
 # Tube MPC Parameters
-  tube_radius: 0.5                  # ē: Tube radius (increased by 0.1 for safety)
+  tube_radius: 0.2                  # ē: Tube radius (✅ TUNED: 0.5→0.2 to reduce DR margin)
   lipschitz_constant: 1.0           # L_h: Safety function Lipschitz constant
 
 # Safety Function Parameters

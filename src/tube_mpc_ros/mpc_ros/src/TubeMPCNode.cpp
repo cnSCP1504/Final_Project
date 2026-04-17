@@ -767,8 +767,9 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         snapshot.vel = _speed;
         snapshot.angvel = _w_filtered;
 
-        // Tracking error norm (from current error state)
-        snapshot.tracking_error_norm = _e_current.norm();
+        // Tracking error norm (combined position and heading error)
+        // ✅ FIX: 使用sqrt(cte² + etheta²)代替_e_current.norm()（后者从未更新）
+        snapshot.tracking_error_norm = std::sqrt(cte*cte + etheta*etheta);
 
         // Tube status
         snapshot.tube_radius = _tube_mpc.getTubeRadius();
@@ -868,8 +869,9 @@ void TubeMPCNode::controlLoopCB(const ros::TimerEvent&)
         std_msgs::Float64MultiArray tracking_error_msg;
         tracking_error_msg.data.clear();
         tracking_error_msg.data.push_back(cte);           // Cross-track error
-        tracking_error_msg.data.push_back(etheta);         // Heading error
-        tracking_error_msg.data.push_back(_e_current.norm());  // Error norm
+        tracking_error_msg.data.push_back(etheta);        // Heading error
+        // ✅ FIX: 使用sqrt(cte² + etheta²)代替_e_current.norm()（后者从未更新）
+        tracking_error_msg.data.push_back(std::sqrt(cte*cte + etheta*etheta));  // Combined error norm
         tracking_error_msg.data.push_back(_tube_mpc.getTubeRadius());  // Current tube radius
         _pub_tracking_error.publish(tracking_error_msg);
 

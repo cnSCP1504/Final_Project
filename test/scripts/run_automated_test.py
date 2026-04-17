@@ -372,13 +372,27 @@ class ManuscriptMetricsCollector:
             metrics['satisfaction_probability'] = None
 
         # 2. Empirical Risk (安全违反率)
-        # ✅ 修复：使用tube_violation_count而不是safety_violation_count
+        # ✅ 修复：对于DR模式，使用safety_violation_count（基于DR margin和位置误差）
+        # 对于非DR模式，使用tube_violation_count
         if self.data['safety_total_steps'] > 0:
-            metrics['empirical_risk'] = (
-                self.data['tube_violation_count'] / self.data['safety_total_steps']
-            )
+            # 检查是否有DR margins数据（判断是否为DR模式）
+            has_dr_margins = len(self.data['dr_margins_history']) > 0
+
+            if has_dr_margins and self.data['safety_violation_count'] > 0:
+                # DR模式：使用DR margin违反次数（基于位置误差cte）
+                metrics['empirical_risk'] = (
+                    self.data['safety_violation_count'] / self.data['safety_total_steps']
+                )
+                metrics['empirical_risk_method'] = 'DR_margin_based'
+            else:
+                # 非DR模式：使用tube违反次数
+                metrics['empirical_risk'] = (
+                    self.data['tube_violation_count'] / self.data['safety_total_steps']
+                )
+                metrics['empirical_risk_method'] = 'tube_radius_based'
         else:
             metrics['empirical_risk'] = None
+            metrics['empirical_risk_method'] = 'no_data'
 
         # 3. Dynamic & Safe Regret (平均值)
         if len(self.data['dynamic_regret']) > 0:
@@ -434,14 +448,13 @@ class ManuscriptMetricsCollector:
             metrics['tube_occupancy_rate'] = None
 
         metrics['tube_violation_count'] = self.data['tube_violation_count']
+        metrics['safety_violation_count'] = self.data['safety_violation_count']
 
         # 7. Calibration Accuracy
-        # ✅ 修复：使用tube_violation_count而不是safety_violation_count
-        # tube_violation_count在所有模式下都有值，safety_violation_count可能为0
+        # ✅ 修复：对于DR模式，使用safety_violation_count计算校准误差
         if self.data['safety_total_steps'] > 0:
-            metrics['observed_violation_rate'] = (
-                self.data['tube_violation_count'] / self.data['safety_total_steps']
-            )
+            # 使用empirical_risk作为observed_violation_rate
+            metrics['observed_violation_rate'] = metrics['empirical_risk']
             metrics['calibration_error'] = abs(
                 metrics['observed_violation_rate'] - self.data['target_delta']
             )
@@ -480,8 +493,17 @@ class ManuscriptMetricsCollector:
         # 2. Empirical Risk
         if metrics['empirical_risk'] is not None:
             print(f"\n2️⃣  Empirical Risk (经验风险):")
-            # ✅ 修复：使用tube_violation_count
-            print(f"   - 违反次数: {self.data['tube_violation_count']}/{self.data['safety_total_steps']}")
+            # ✅ 修复：根据计算方法显示正确的违反次数
+            method = metrics.get('empirical_risk_method', 'unknown')
+            if method == 'DR_margin_based':
+                violation_count = self.data['safety_violation_count']
+                print(f"   - 计算方法: DR margin (位置误差)")
+                print(f"   - 阈值: DR margin (~1.0m)")
+            else:
+                violation_count = self.data['tube_violation_count']
+                print(f"   - 计算方法: Tube radius (综合误差)")
+                print(f"   - 阈值: tube_radius (~0.5m)")
+            print(f"   - 违反次数: {violation_count}/{self.data['safety_total_steps']}")
             print(f"   - 违反率: {metrics['empirical_risk']:.4f}")
             print(f"   - 目标风险 δ: {self.data['target_delta']:.2f}")
         else:
