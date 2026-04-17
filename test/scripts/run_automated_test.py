@@ -22,6 +22,9 @@ Automated Baseline Testing System - Python Version
     # 测试前3个货架，使用STL增强模型
     python3 run_automated_test.py --model stl --shelves 3
 
+    # 测试纯MPC基准（论文对照）
+    python3 run_automated_test.py --model mpc --shelves 5
+
     # 🔥 测试所有模型，每个模型测试10个货架（完整测试）
     python3 run_automated_test.py --model all --shelves 10
 
@@ -139,67 +142,96 @@ class ManuscriptMetricsCollector:
         self.start_time = None
         self.step_count = 0
 
-    def setup_ros_subscribers(self):
-        """设置所有需要的ROS话题订阅"""
+    def setup_ros_subscribers(self, model_name='tube_mpc'):
+        """设置所有需要的ROS话题订阅
+
+        Args:
+            model_name: 模型名称，用于判断哪些话题可用
+                - mpc: 纯MPC，只发布基础话题（/mpc_trajectory, /cmd_vel）
+                - tube_mpc, stl, dr, safe_regret: 发布完整的metrics话题
+        """
+        self.model_name = model_name
+
         try:
             # 1. STL Robustness (from stl_monitor)
-            # 注意：stl_monitor发布的是Float32，不是Float64！
-            try:
-                from std_msgs.msg import Float32
-                # 关键修复：指定queue_size=10，避免消息队列积压
-                self.subscribers['stl_robustness'] = rospy.Subscriber(
-                    '/stl_monitor/robustness', Float32, self.stl_robustness_callback, queue_size=10)
-                self.subscribers['stl_budget'] = rospy.Subscriber(
-                    '/stl_monitor/budget', Float32, self.stl_budget_callback, queue_size=10)
-            except Exception as e:
-                TestLogger.warning(f"无法订阅STL话题: {e}")
+            # 注意：stl_monitor只在stl和safe_regret模式下启用
+            if model_name in ['stl', 'safe_regret']:
+                try:
+                    from std_msgs.msg import Float32
+                    # 关键修复：指定queue_size=10，避免消息队列积压
+                    self.subscribers['stl_robustness'] = rospy.Subscriber(
+                        '/stl_monitor/robustness', Float32, self.stl_robustness_callback, queue_size=10)
+                    self.subscribers['stl_budget'] = rospy.Subscriber(
+                        '/stl_monitor/budget', Float32, self.stl_budget_callback, queue_size=10)
+                except Exception as e:
+                    TestLogger.warning(f"无法订阅STL话题: {e}")
+            else:
+                TestLogger.info(f"  STL话题禁用（模型: {model_name}）")
 
             # 2. DR Margins (from dr_tightening)
-            # 注意：launch文件将话题remap成了 /dr_margins
-            try:
-                from std_msgs.msg import Float64MultiArray
-                self.subscribers['dr_margins'] = rospy.Subscriber(
-                    '/dr_margins', Float64MultiArray, self.dr_margins_callback, queue_size=10)
-            except Exception as e:
-                TestLogger.warning(f"无法订阅DR话题: {e}")
+            # 注意：DR只在dr和safe_regret模式下启用
+            if model_name in ['dr', 'safe_regret']:
+                try:
+                    from std_msgs.msg import Float64MultiArray
+                    self.subscribers['dr_margins'] = rospy.Subscriber(
+                        '/dr_margins', Float64MultiArray, self.dr_margins_callback, queue_size=10)
+                except Exception as e:
+                    TestLogger.warning(f"无法订阅DR话题: {e}")
+            else:
+                TestLogger.info(f"  DR话题禁用（模型: {model_name}）")
 
             # 3. Tracking Error (from tube_mpc)
-            # 注意：tube_mpc发布的是Float64MultiArray，不是Float64！
-            try:
-                from std_msgs.msg import Float64MultiArray
-                self.subscribers['tracking_error'] = rospy.Subscriber(
-                    '/tube_mpc/tracking_error', Float64MultiArray, self.tracking_error_callback, queue_size=10)
-            except Exception as e:
-                TestLogger.warning(f"无法订阅tracking_error话题: {e}")
+            # 注意：tube_mpc, stl, dr, safe_regret都发布tracking_error
+            # 纯MPC没有这个话题
+            if model_name in ['tube_mpc', 'stl', 'dr', 'safe_regret']:
+                try:
+                    from std_msgs.msg import Float64MultiArray
+                    self.subscribers['tracking_error'] = rospy.Subscriber(
+                        '/tube_mpc/tracking_error', Float64MultiArray, self.tracking_error_callback, queue_size=10)
+                except Exception as e:
+                    TestLogger.warning(f"无法订阅tracking_error话题: {e}")
+            else:
+                TestLogger.info(f"  Tracking Error话题禁用（模型: {model_name}，纯MPC无此功能）")
 
             # 4. MPC Solver Stats (from tube_mpc MetricsCollector)
-            # 注意：实际话题名称是 /mpc_metrics/*，不是 /mpc_solver/*
-            try:
-                from std_msgs.msg import Float64
-                self.subscribers['mpc_solve_time'] = rospy.Subscriber(
-                    '/mpc_metrics/solve_time_ms', Float64, self.mpc_solve_time_callback, queue_size=10)
-                self.subscribers['mpc_feasibility'] = rospy.Subscriber(
-                    '/mpc_metrics/feasibility_rate', Float64, self.mpc_feasibility_callback, queue_size=10)
-            except Exception as e:
-                TestLogger.warning(f"无法订阅MPC solver话题: {e}")
+            # 注意：纯MPC没有这个话题
+            if model_name in ['tube_mpc', 'stl', 'dr', 'safe_regret']:
+                try:
+                    from std_msgs.msg import Float64
+                    self.subscribers['mpc_solve_time'] = rospy.Subscriber(
+                        '/mpc_metrics/solve_time_ms', Float64, self.mpc_solve_time_callback, queue_size=10)
+                    self.subscribers['mpc_feasibility'] = rospy.Subscriber(
+                        '/mpc_metrics/feasibility_rate', Float64, self.mpc_feasibility_callback, queue_size=10)
+                except Exception as e:
+                    TestLogger.warning(f"无法订阅MPC solver话题: {e}")
+            else:
+                TestLogger.info(f"  MPC Metrics话题禁用（模型: {model_name}，纯MPC无此功能）")
 
             # 5. Tube Boundaries (for tube occupancy)
-            try:
-                from geometry_msgs.msg import PolygonStamped
-                self.subscribers['tube_boundaries'] = rospy.Subscriber(
-                    '/tube_boundaries', PolygonStamped, self.tube_boundaries_callback, queue_size=10)
-            except Exception as e:
-                TestLogger.warning(f"无法订阅tube_boundaries话题: {e}")
+            # 纯MPC没有这个话题
+            if model_name in ['tube_mpc', 'stl', 'dr', 'safe_regret']:
+                try:
+                    from geometry_msgs.msg import PolygonStamped
+                    self.subscribers['tube_boundaries'] = rospy.Subscriber(
+                        '/tube_boundaries', PolygonStamped, self.tube_boundaries_callback, queue_size=10)
+                except Exception as e:
+                    TestLogger.warning(f"无法订阅tube_boundaries话题: {e}")
+            else:
+                TestLogger.info(f"  Tube Boundaries话题禁用（模型: {model_name}）")
 
             # 6. Regret Metrics (from safe_regret reference_planner)
-            try:
-                from std_msgs.msg import Float64MultiArray
-                self.subscribers['regret_metrics'] = rospy.Subscriber(
-                    '/safe_regret/regret_metrics', Float64MultiArray, self.regret_metrics_callback, queue_size=10)
-            except Exception as e:
-                TestLogger.warning(f"无法订阅regret_metrics话题: {e}")
+            # 只有safe_regret模式有这个话题
+            if model_name in ['safe_regret']:
+                try:
+                    from std_msgs.msg import Float64MultiArray
+                    self.subscribers['regret_metrics'] = rospy.Subscriber(
+                        '/safe_regret/regret_metrics', Float64MultiArray, self.regret_metrics_callback, queue_size=10)
+                except Exception as e:
+                    TestLogger.warning(f"无法订阅regret_metrics话题: {e}")
+            else:
+                TestLogger.info(f"  Regret Metrics话题禁用（模型: {model_name}）")
 
-            TestLogger.success("Manuscript Metrics订阅者设置完成")
+            TestLogger.success(f"Manuscript Metrics订阅者设置完成（模型: {model_name}）")
 
         except Exception as e:
             TestLogger.error(f"设置ROS订阅者时出错: {e}")
@@ -568,25 +600,43 @@ class ModelConfig:
     """模型配置管理器"""
 
     MODELS = {
+        'mpc': {
+            'name': 'Pure MPC (Baseline)',
+            'description': '纯MPC控制器（论文基准对照）',
+            'launch_package': 'mpc_ros',
+            'launch_file': 'mpc_baseline_test.launch',  # 使用新的launch文件
+            'params': '',
+            'is_mpc_ros': True,
+            # mpc_baseline_test.launch的参数映射
+            'position_args': {
+                'x': 'pickup_x',
+                'y': 'pickup_y',
+                'yaw': 'pickup_yaw'
+            }
+        },
         'tube_mpc': {
             'name': 'Tube MPC',
             'params': '',  # 使用launch文件默认值
-            'description': '仅使用Tube MPC（基线模型）'
+            'description': '仅使用Tube MPC（基线模型）',
+            'is_mpc_ros': False
         },
         'stl': {
             'name': 'Tube MPC + STL',
             'params': 'enable_stl:=true enable_dr:=false',
-            'description': 'Tube MPC + STL监控'
+            'description': 'Tube MPC + STL监控',
+            'is_mpc_ros': False
         },
         'dr': {
             'name': 'Tube MPC + DR',
             'params': 'enable_stl:=false enable_dr:=true',
-            'description': 'Tube MPC + DR约束收紧'
+            'description': 'Tube MPC + DR约束收紧',
+            'is_mpc_ros': False
         },
         'safe_regret': {
             'name': 'Safe-Regret MPC',
             'params': 'enable_stl:=true enable_dr:=true enable_reference_planner:=true',
-            'description': '完整Safe-Regret MPC (STL+DR+Reference)'
+            'description': '完整Safe-Regret MPC (STL+DR+Reference)',
+            'is_mpc_ros': False
         }
     }
 
@@ -634,12 +684,13 @@ class GoalMonitor:
     # 移除全局订阅者，改为实例变量（修复第二次测试回调绑定问题）
     # _subscriber = None  # 不再使用全局订阅者
 
-    def __init__(self, goals, goal_radius=0.5, timeout=240, launch_process=None, test_dir=None):
+    def __init__(self, goals, goal_radius=0.5, timeout=240, launch_process=None, test_dir=None, model_name='tube_mpc'):
         self.goals = goals
         self.goal_radius = goal_radius
         self.timeout = timeout
         self.launch_process = launch_process  # 添加launch进程引用
         self.test_dir = test_dir  # 添加测试目录
+        self.model_name = model_name  # 添加模型名称
 
         self.current_goal_index = 0
         self.goals_reached = []
@@ -665,13 +716,14 @@ class GoalMonitor:
             'manuscript_metrics': {}  # 添加manuscript指标
         }
 
-    def reset(self, goals, goal_radius=0.5, timeout=240, launch_process=None, test_dir=None):
+    def reset(self, goals, goal_radius=0.5, timeout=240, launch_process=None, test_dir=None, model_name='tube_mpc'):
         """重置监控器状态（用于复用实例）"""
         self.goals = goals
         self.goal_radius = goal_radius
         self.timeout = timeout
         self.launch_process = launch_process
         self.test_dir = test_dir  # 更新测试目录
+        self.model_name = model_name  # 更新模型名称
 
         self.current_goal_index = 0
         self.goals_reached = []
@@ -920,7 +972,7 @@ class GoalMonitor:
         # 设置Manuscript Metrics订阅者
         if self.manuscript_metrics:
             print("📊 设置Manuscript Metrics订阅者...")
-            self.manuscript_metrics.setup_ros_subscribers()
+            self.manuscript_metrics.setup_ros_subscribers(self.model_name)  # 传入模型名称
             print("✓ Manuscript Metrics订阅者已设置")
         else:
             print("⚠️  Manuscript Metrics收集器未初始化")
@@ -1040,18 +1092,30 @@ class AutomatedTestRunner:
             except Exception as e:
                 TestLogger.warning(f"无法source workspace setup: {e}")
 
-        # 构建launch命令 - 所有模型都使用safe_regret_mpc launch文件
-        launch_cmd_str = (
-            f"source {self.workspace_dir}/devel/setup.bash && "
-            f"roslaunch safe_regret_mpc safe_regret_mpc_test.launch "
-            f"pickup_x:={shelf['x']} "
-            f"pickup_y:={shelf['y']} "
-            f"pickup_yaw:={shelf['yaw']} "
-            f"use_gazebo:={str(self.args.use_gazebo).lower()} "
-            f"enable_visualization:={str(self.args.visualization).lower()} "
-            f"debug_mode:=true "
-            f"{self.model_config['params']}"
-        )
+        # 构建launch命令 - 根据模型类型选择不同的launch文件
+        is_mpc_ros = self.model_config.get('is_mpc_ros', False)
+
+        if is_mpc_ros:
+            # ✅ MPC纯基准：使用原始mpc_ros的nav_gazebo.launch（已验证工作正常）
+            launch_cmd_str = (
+                f"source {self.workspace_dir}/devel/setup.bash && "
+                f"roslaunch mpc_ros nav_gazebo.launch "
+                f"controller:=mpc "
+                f"gui:={str(self.args.visualization).lower()}"
+            )
+        else:
+            # safe_regret_mpc包使用统一的launch文件
+            launch_cmd_str = (
+                f"source {self.workspace_dir}/devel/setup.bash && "
+                f"roslaunch safe_regret_mpc safe_regret_mpc_test.launch "
+                f"pickup_x:={shelf['x']} "
+                f"pickup_y:={shelf['y']} "
+                f"pickup_yaw:={shelf['yaw']} "
+                f"use_gazebo:={str(self.args.use_gazebo).lower()} "
+                f"enable_visualization:={str(self.args.visualization).lower()} "
+                f"debug_mode:=true "
+                f"{self.model_config['params']}"
+            )
 
         TestLogger.info(f"Launch命令: {launch_cmd_str}")
 
@@ -1095,7 +1159,8 @@ class AutomatedTestRunner:
                 goal_radius=0.5,
                 timeout=self.args.timeout,
                 launch_process=self.launch_process,
-                test_dir=test_dir  # 传入测试目录
+                test_dir=test_dir,  # 传入测试目录
+                model_name=self.args.model  # 传入模型名称
             )
         else:
             # 后续测试：重置现有实例
@@ -1105,7 +1170,8 @@ class AutomatedTestRunner:
                 goal_radius=0.5,
                 timeout=self.args.timeout,
                 launch_process=self.launch_process,
-                test_dir=test_dir  # 传入测试目录
+                test_dir=test_dir,  # 传入测试目录
+                model_name=self.args.model  # 传入模型名称
             )
 
         # 保存metrics
@@ -2253,7 +2319,10 @@ def main():
   # 测试前3个货架，使用STL增强模型
   python3 run_automated_test.py --model stl --shelves 3
 
-  # 🔥 测试所有模型，每个模型测试10个货架（完整测试）
+  # 测试纯MPC基准（论文对照，使用mpc_ros包）
+  python3 run_automated_test.py --model mpc --shelves 5
+
+  # 🔥 测试所有模型，每个模型测试10个货架（完整测试，包含纯MPC基准）
   python3 run_automated_test.py --model all --shelves 10
 
   # 快速测试所有模型（每个模型只测试1个货架）
@@ -2268,7 +2337,7 @@ def main():
     )
 
     parser.add_argument('--model',
-                       choices=['tube_mpc', 'stl', 'dr', 'safe_regret', 'all'],
+                       choices=['mpc', 'tube_mpc', 'stl', 'dr', 'safe_regret', 'all'],
                        default='tube_mpc',
                        help='模型类型 (默认: tube_mpc, "all"测试所有模型)')
 
@@ -2329,7 +2398,7 @@ def main():
 
     # ✅ 处理 "all" 模式：循环测试所有模型
     if args.model == 'all':
-        all_models = ['tube_mpc', 'stl', 'dr', 'safe_regret']
+        all_models = ['mpc', 'tube_mpc', 'stl', 'dr', 'safe_regret']
         TestLogger.info("="*70)
         TestLogger.info("🚀 ALL MODE: 测试所有模型")
         TestLogger.info("="*70)

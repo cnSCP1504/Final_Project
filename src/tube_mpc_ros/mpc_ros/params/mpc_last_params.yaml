@@ -1,5 +1,5 @@
 MPCPlannerROS:
-  global_path_topic: /move_base/MPCPlannerROS/global_plan
+  global_path_topic: /move_base/GlobalPlanner/plan  # ✅ 修复：使用GlobalPlanner话题
   map_frame: map
   odom_frame: odom
   base_frame: base_footprint

@@ -1,0 +1,17 @@
+
+\begin{table}[htbp]
+\centering
+\caption{Comprehensive Performance Comparison of Four MPC Methods (10 independent runs, 10 shelf points each)}
+\label{tab:mpc_comparison}
+\begin{tabular}{lccccccc}
+\toprule
+\textbf{Method} & \textbf{Goal Success} & \textbf{Empirical Risk} $\hat{\delta}$ & \textbf{Feasibility} & \textbf{Tracking Error} & \textbf{Tube Occupancy} & \textbf{Solve Time} & \textbf{Calibration Error} \\
+ & (\%) & (\%) & (\%) & (m) & (\%) & (ms) & \\
+\midrule
+Tube MPC & 93.0$\pm$7.5 & 17.96$\pm$3.48 & 100.0 & 0.462$\pm$0.064 & 82.0$\pm$3.5 & 16.2$\pm$2.8 & 0.1746$\pm$0.0348 \\
+STL MPC & 96.0$\pm$6.6 & 17.13$\pm$2.05 & 100.0 & 0.451$\pm$0.036 & 82.9$\pm$2.0 & 17.4$\pm$3.6 & 0.1663$\pm$0.0205 \\
+DR MPC & 89.5$\pm$8.8 & 17.06$\pm$3.45 & 100.0 & 0.460$\pm$0.055 & 82.9$\pm$3.4 & 16.9$\pm$3.3 & 0.1656$\pm$0.0345 \\
+Safe-Regret MPC & 95.0$\pm$5.5 & 17.00$\pm$2.61 & 100.0 & 0.443$\pm$0.061 & 83.0$\pm$2.6 & 19.9$\pm$4.2 & 0.1650$\pm$0.0261 \\
+\bottomrule
+\end{tabular}
+\end{table}
