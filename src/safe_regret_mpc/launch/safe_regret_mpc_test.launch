@@ -71,7 +71,7 @@
       <param name="risk_allocation_strategy" value="uniform"/>
       <param name="ambiguity_strategy" value="wasserstein_ball"/>
       <param name="confidence_level" value="0.9"/>
-      <param name="tube_radius" value="0.18"/>  <!-- 增加到18cm，提高安全性（原8cm） -->
+      <param name="tube_radius" value="0.5"/>  <!-- ✅ FIX: 使用与dr_tightening_params.yaml一致的值 -->
       <param name="lipschitz_constant" value="1.0"/>
       <param name="safety_buffer" value="0.18"/>  <!-- 增加到18cm，提高安全性（原8cm） -->
       <param name="obstacle_influence_radius" value="1.6"/>  <!-- 增加到1.6m，提高安全性（原1.5m） -->
@@ -104,7 +104,7 @@
 
       <!-- Algorithm Configuration -->
       <param name="no_regret_algorithm" value="omd"/>
-      <param name="tube_radius" value="0.18"/>
+      <param name="tube_radius" value="0.5"/>  <!-- ✅ FIX: 使用与dr_tightening_params.yaml一致的值 -->
       <param name="L_lipschitz" value="1.0"/>
       <param name="infeasibility_penalty" value="1000.0"/>
 

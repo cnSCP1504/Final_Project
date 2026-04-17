@@ -104,6 +104,27 @@ Eigen::VectorXd NavigationSafetyFunction::gradient(const Eigen::VectorXd& state)
     grad[0] = -(f_x_plus - f_x_minus) / (2.0 * epsilon * 254.0);
     grad[1] = -(f_y_plus - f_y_minus) / (2.0 * epsilon * 254.0);
 
+    // ✅ FIX: 如果costmap梯度太小（自由空间），使用状态边界约束的梯度
+    double grad_norm = std::sqrt(grad[0]*grad[0] + grad[1]*grad[1]);
+    if (grad_norm < 1e-6) {
+      // 使用状态边界约束的梯度作为fallback
+      double x_max = 10.0;
+      double y_max = 10.0;
+
+      // ∇h(x) = [-2x/x_max², -2y/y_max²]
+      grad[0] = -2.0 * state[0] / (x_max * x_max);
+      grad[1] = -2.0 * state[1] / (y_max * y_max);
+
+      // ✅ DEBUG: 只打印前几次
+      static int debug_count = 0;
+      if (debug_count < 3) {
+        std::cout << "[DEBUG] gradient fallback (costmap gradient ~0):" << std::endl;
+        std::cout << "  position: [" << state[0] << ", " << state[1] << "]" << std::endl;
+        std::cout << "  fallback gradient: [" << grad[0] << ", " << grad[1] << "]" << std::endl;
+        debug_count++;
+      }
+    }
+
     return grad;
   }
 
